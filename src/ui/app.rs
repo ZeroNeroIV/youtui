@@ -700,8 +700,19 @@ impl App {
                         } else if key.code == KeyCode::Enter {
                             if self.active_block == ActiveBlock::Sidebar {
                                 if let Some(idx) = self.sidebar_state.selected() {
-                                    if self.sidebar_items[idx] == "Settings" {
-                                        self.mode = AppMode::Settings;
+                                    match self.sidebar_items[idx].as_str() {
+                                        "Search" => self.mode = AppMode::Search,
+                                        "History" => self.mode = AppMode::History,
+                                        "Saved" => self.mode = AppMode::Saved,
+                                        "Playlists" => self.mode = AppMode::Playlist,
+                                        "Settings" => self.mode = AppMode::Settings,
+                                        _ => {}
+                                    }
+                                }
+                            } else if self.active_block == ActiveBlock::Content {
+                                if let Some(idx) = self.list_state.selected() {
+                                    if let Some(video_title) = self.items.get(idx) {
+                                        self.play_main_video(video_title);
                                     }
                                 }
                             }
@@ -716,7 +727,6 @@ impl App {
                     }
                     AppMode::Search => {
                         match key.code {
-                            KeyCode::Char('d') => self.handle_download_shortcut(),
                             KeyCode::Char(c) => {
                                 self.search_query.push(c);
                                 self.search_results.clear();
@@ -1038,6 +1048,33 @@ impl App {
         let video_id = video.video_id.clone();
         let title = video.title.clone();
         let channel = video.author.clone();
+        tokio::spawn(async move {
+            let _ = db.add_to_history(&video_id, &title, channel.as_deref());
+            let _ = player.play(&url, &[]).await;
+        });
+    }
+
+    fn play_main_video(&self, video_title: &str) {
+        let player = self.player.clone();
+        let db = self.db.clone();
+        let title = video_title.to_string();
+
+        let (video_id, channel) = match video_title {
+            "Video 1: Rust for Beginners" => ("S_S_S_S_S1_", "Rust Lang"),
+            "Video 2: Advanced Ratatui Patterns" => ("S_S_S_S_S2_", "Ratatui"),
+            "Video 3: Async Programming in Rust" => ("S_S_S_S_S3_", "Tokio"),
+            "Video 4: Building a TUI with Mouse Support" => ("S_S_S_S_S4_", "TUI Dev"),
+            "Video 5: YouTube API Integration" => ("S_S_S_S_S5_", "API Guide"),
+            "Video 6: SQLite Persistence" => ("S_S_S_S_S6_", "DB Tips"),
+            "Video 7: Theme Systems in TUIs" => ("S_S_S_S_S7_", "Design"),
+            "Video 8: Error Handling Best Practices" => ("S_S_S_S_S8_", "Rust Tips"),
+            _ => ("dQw4w9WgXcQ", "Rick Astley"),
+        };
+
+        let url = format!("https://www.youtube.com/watch?v={}", video_id);
+        let video_id = video_id.to_string();
+        let channel = Some(channel.to_string());
+
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
             let _ = player.play(&url, &[]).await;
