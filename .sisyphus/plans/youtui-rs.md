@@ -161,7 +161,7 @@ Wave FINAL (After ALL tasks):
 
 ## TODOs
 
-- [ ] 1. **Project scaffold + Cargo.toml dependencies**
+- [x] 1. **Project scaffold + Cargo.toml dependencies**
 
   **What to do**:
   - Create new Rust project with `cargo new youtui-rs`
@@ -192,9 +192,9 @@ Wave FINAL (After ALL tasks):
   > - rusqlite: https://github.com/rusqlite/rusqlite - Check bundled feature for SQLite
 
   **Acceptance Criteria**:
-  - [ ] `cargo new youtui-rs` creates project
-  - [ ] `Cargo.toml` has all dependencies with compatible versions
-  - [ ] `cargo check` passes without errors
+  - [x] `cargo new youtui-rs` creates project
+  - [x] `Cargo.toml` has all dependencies with compatible versions
+  - [x] `cargo check` passes without errors
 
   **QA Scenarios**:
   ```
@@ -214,7 +214,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 2. **B_DEBUG_FLAG + logging setup (tracing)**
+- [x] 2. **B_DEBUG_FLAG + logging setup (tracing)**
 
   **What to do**:
   - Create `src/config/mod.rs` with B_DEBUG_FLAG
@@ -265,7 +265,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 3. **Config module (XDG dirs, settings)**
+- [x] 3. **Config module (XDG dirs, settings)**
 
   **What to do**:
   - Create `src/config/settings.rs` for app configuration
@@ -315,7 +315,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 4. **Database module (rusqlite + migrations)**
+- [x] 4. **Database module (rusqlite + migrations)**
 
   **What to do**:
   - Create `src/db/mod.rs` with SQLite connection
@@ -365,7 +365,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 5. **Error handling (thiserror + anyhow)**
+- [x] 5. **Error handling (thiserror + anyhow)**
 
   **What to do**:
   - Create `src/error.rs` with custom error types
@@ -400,7 +400,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 6. **Basic ratatui setup + main loop**
+- [x] 6. **Basic ratatui setup + main loop**
 
   **What to do**:
   - Create `src/ui/mod.rs` with basic TUI setup
@@ -449,7 +449,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 7. **Invidious API client (reqwest)**
+- [x] 7. **Invidious API client (reqwest)**
 
   **What to do**:
   - Create `src/api/invidious.rs` client
@@ -501,7 +501,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 8. **Piped API client**
+- [x] 8. **Piped API client**
 
   **What to do**:
   - Create `src/api/piped.rs` client
@@ -534,7 +534,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 9. **yt-dlp fallback wrapper**
+- [x] 9. **yt-dlp fallback wrapper**
 
   **What to do**:
   - Create `src/api/ytdlp.rs` wrapper
@@ -563,7 +563,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 10. **API Health check + instance rotation**
+- [x] 10. **API Health check + instance rotation**
 
   **What to do**:
   - Create `src/api/health.rs` 
@@ -589,7 +589,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 11. **Models (Video, Playlist, SearchResult, etc.)**
+- [x] 11. **Models (Video, Playlist, SearchResult, etc.)**
 
   **What to do**:
   - Create `src/models/mod.rs`
@@ -616,7 +616,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 12. **Search feature implementation**
+- [x] 12. **Search feature implementation**
 
   **What to do**:
   - Create search UI (input field + results list)
@@ -663,7 +663,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 13. **Playback module (mpv integration)**
+- [x] 13. **Playback module (mpv integration)**
 
   **What to do**:
   - Create `src/player/mod.rs` for playback
@@ -712,7 +712,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 14. **Watch history feature**
+- [x] 14. **Watch history feature**
 
   **What to do**:
   - Create `src/ui/history.rs` screen
@@ -743,7 +743,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 15. **Saved videos feature**
+- [x] 15. **Saved videos feature**
 
   **What to do**:
   - Create `src/ui/saved.rs` screen
@@ -768,7 +768,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 16. **Local playlists feature**
+- [x] 16. **Local playlists feature**
 
   **What to do**:
   - Create `src/ui/playlists.rs` screen
@@ -794,7 +794,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 17. **YouTube playlist sync**
+- [x] 17. **YouTube playlist sync**
 
   **What to do**:
   - Import YouTube playlists via URL
@@ -819,7 +819,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 18. **Download feature**
+- [x] 18. **Download feature**
 
   **What to do**:
   - Create download function using yt-dlp
@@ -850,7 +850,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 19. **Video details + quality selection**
+- [x] 19. **Video details + quality selection**
 
   **What to do**:
   - Create video details panel
@@ -875,7 +875,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 20. **Theme system (6 themes)**
+- [x] 20. **Theme system (6 themes)**
 
   **What to do**:
   - Create `src/ui/theme.rs` with 6 themes
@@ -921,7 +921,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 21. **Sidebar navigation UI**
+- [x] 21. **Sidebar navigation UI**
 
   **What to do**:
   - Create sidebar with menu items
@@ -949,7 +949,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 22. **Mouse support (click, scroll, context menu)**
+- [x] 22. **Mouse support (click, scroll, context menu)**
 
   **What to do**:
   - Enable mouse events in ratatui
@@ -995,7 +995,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 23. **Settings panel**
+- [x] 23. **Settings panel**
 
   **What to do**:
   - Create settings UI
@@ -1020,7 +1020,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 24. **Edge case handling + error messages**
+- [x] 24. **Edge case handling + error messages**
 
   **What to do**:
   - Handle network errors gracefully
@@ -1049,7 +1049,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 25. **Startup behavior (check updates, remember position)**
+- [x] 25. **Startup behavior (check updates, remember position)**
 
   **What to do**:
   - Check for app updates on startup (optional, can skip)
@@ -1074,7 +1074,7 @@ Wave FINAL (After ALL tasks):
 
 ---
 
-- [ ] 26. **CI/CD setup (GitHub Actions)**
+- [x] 26. **CI/CD setup (GitHub Actions)**
 
   **What to do**:
   - Create `.github/workflows/ci.yml`
@@ -1121,16 +1121,16 @@ Wave FINAL (After ALL tasks):
 
 ## Final Verification Wave (MANDATORY)
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Verify all "Must Have" implemented, "Must NOT Have" absent, evidence files exist.
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run `cargo clippy`, `cargo fmt --check`, `cargo test`.
 
 - [ ] F3. **Integration Testing** — `unspecified-high`
   Run search, playback, history, playlist scenarios end-to-end.
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
   Verify no scope creep, no missing features from spec.
 
 ---

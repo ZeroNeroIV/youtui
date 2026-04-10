@@ -1,0 +1,4 @@
+Flow 5: Import Playlist
+- Result: Import failed with 403 Forbidden from Invidious instance.
+- Status: FAILED (API issue)
+- Evidence: sqlite3 query returned empty

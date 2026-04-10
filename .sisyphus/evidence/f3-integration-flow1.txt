@@ -1,0 +1,4 @@
+Flow 1: Search -> Select -> Play
+- Action: Sent 's', 'Rust', Enter, Enter
+- Result: mpv process found (PID 291961)
+- Status: SUCCESS

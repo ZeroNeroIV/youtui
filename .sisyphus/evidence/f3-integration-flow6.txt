@@ -1,0 +1,4 @@
+Flow 6: Download Video
+- Result: Download only available via right-click context menu, no keyboard shortcut.
+- Status: FAILED (Keyboard flow impossible)
+- Evidence: Code review of trigger_download calls

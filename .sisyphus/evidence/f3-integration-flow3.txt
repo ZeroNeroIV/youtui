@@ -1,0 +1,4 @@
+Flow 3: Select -> Save
+- Result: Save option in context menu is an empty block.
+- Status: FAILED (Logic missing in src/ui/app.rs)
+- Evidence: Code review of handle_mouse_event

@@ -1,0 +1,4 @@
+Flow 4: Create Playlist -> Add Video
+- Result: Playlist created successfully, but adding videos is not implemented in UI.
+- Status: PARTIAL (Creation SUCCESS, Adding FAILED)
+- Evidence: sqlite3 verified creation, code review showed missing add_to_playlist call

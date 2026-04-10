@@ -1,6 +1,49 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Application version - used for startup banner
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// State persisted across sessions (last screen, scroll position, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppState {
+    /// Last active sidebar index (screen)
+    pub last_sidebar_index: usize,
+    /// Last scroll position in content list
+    pub last_content_index: usize,
+    /// Last scroll position in settings list
+    pub last_settings_index: usize,
+}
+
+impl AppState {
+    /// Load app state from config directory
+    pub fn load() -> Self {
+        if let Some(config_dir) = dirs::config_dir() {
+            let state_path = config_dir.join("youtui-rs").join("state.json");
+            if state_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&state_path) {
+                    if let Ok(state) = serde_json::from_str(&content) {
+                        return state;
+                    }
+                }
+            }
+        }
+        Self::default()
+    }
+
+    /// Save app state to config directory
+    pub fn save(&self) -> Result<(), std::io::Error> {
+        if let Some(config_dir) = dirs::config_dir() {
+            let config_dir = config_dir.join("youtui-rs");
+            std::fs::create_dir_all(&config_dir)?;
+            let state_path = config_dir.join("state.json");
+            let content = serde_json::to_string_pretty(self)?;
+            std::fs::write(state_path, content)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub default_quality: String,

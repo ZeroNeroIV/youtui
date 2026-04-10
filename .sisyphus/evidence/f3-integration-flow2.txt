@@ -1,0 +1,4 @@
+Flow 2: Play -> History
+- Result: Video played but NOT added to watch_history table.
+- Status: FAILED (Logic missing in src/ui/app.rs)
+- Evidence: sqlite3 query returned empty

@@ -1,3 +1,4 @@
 pub mod app;
-pub mod theme;
 pub mod components;
+pub mod settings;
+pub mod theme;

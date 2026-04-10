@@ -1,0 +1,4 @@
+Flow 7: Cycle Themes
+- Action: Navigated to Settings -> Theme, pressed Enter 6 times
+- Result: Theme changed (e.g., dark -> retro)
+- Status: SUCCESS
