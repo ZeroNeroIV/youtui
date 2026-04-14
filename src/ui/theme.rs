@@ -19,95 +19,95 @@ impl Theme {
     pub fn terminal() -> Self {
         Self {
             name: "terminal".to_string(),
-            background: Color::Black,
-            foreground: Color::Green,
-            accent: Color::LightGreen,
-            secondary: Color::DarkGray,
-            highlight: Color::Yellow,
-            border: Color::Green,
-            focused_border: Color::Magenta,
-            error: Color::Red,
-            success: Color::LightGreen,
+            background: Color::Rgb(13, 17, 23),
+            foreground: Color::Rgb(201, 209, 217),
+            accent: Color::Rgb(63, 185, 80),
+            secondary: Color::Rgb(139, 148, 158),
+            highlight: Color::Rgb(35, 134, 54),
+            border: Color::Rgb(33, 38, 45),
+            focused_border: Color::Rgb(63, 185, 80),
+            error: Color::Rgb(248, 81, 73),
+            success: Color::Rgb(63, 185, 80),
         }
     }
 
     /// Tokyo Night - popular dark theme with blue/purple tones
-    pub fn tokyo() -> Self {
+    pub fn tokyo_night() -> Self {
         Self {
-            name: "tokyo".to_string(),
+            name: "tokyo_night".to_string(),
             background: Color::Rgb(26, 27, 38),
             foreground: Color::Rgb(192, 202, 245),
-            accent: Color::Rgb(137, 180, 250),
-            secondary: Color::Rgb(98, 114, 164),
-            highlight: Color::Rgb(203, 166, 247),
+            accent: Color::Rgb(122, 162, 247),
+            secondary: Color::Rgb(86, 95, 137),
+            highlight: Color::Rgb(40, 52, 87),
+            border: Color::Rgb(41, 46, 66),
+            focused_border: Color::Rgb(122, 162, 247),
+            error: Color::Rgb(247, 118, 142),
+            success: Color::Rgb(158, 206, 106),
+        }
+    }
+
+    /// Monokai Pro - warm colors on dark background
+    pub fn monokai_pro() -> Self {
+        Self {
+            name: "monokai_pro".to_string(),
+            background: Color::Rgb(45, 42, 46),
+            foreground: Color::Rgb(248, 248, 242),
+            accent: Color::Rgb(166, 226, 46),
+            secondary: Color::Rgb(117, 113, 94),
+            highlight: Color::Rgb(73, 72, 62),
+            border: Color::Rgb(62, 61, 50),
+            focused_border: Color::Rgb(166, 226, 46),
+            error: Color::Rgb(249, 38, 114),
+            success: Color::Rgb(166, 226, 46),
+        }
+    }
+
+    /// Nord - arctic, north-bluish color palette
+    pub fn nord() -> Self {
+        Self {
+            name: "nord".to_string(),
+            background: Color::Rgb(46, 52, 64),
+            foreground: Color::Rgb(236, 239, 244),
+            accent: Color::Rgb(136, 192, 208),
+            secondary: Color::Rgb(76, 86, 106),
+            highlight: Color::Rgb(59, 66, 82),
+            border: Color::Rgb(67, 76, 94),
+            focused_border: Color::Rgb(136, 192, 208),
+            error: Color::Rgb(191, 97, 106),
+            success: Color::Rgb(163, 190, 140),
+        }
+    }
+
+    /// Catppuccin Mocha - soothing, pastel dark theme
+    pub fn catppuccin_mocha() -> Self {
+        Self {
+            name: "catppuccin_mocha".to_string(),
+            background: Color::Rgb(30, 30, 46),
+            foreground: Color::Rgb(205, 214, 244),
+            accent: Color::Rgb(203, 166, 247),
+            secondary: Color::Rgb(108, 112, 134),
+            highlight: Color::Rgb(49, 50, 68),
             border: Color::Rgb(69, 71, 90),
-            focused_border: Color::Rgb(137, 180, 250),
+            focused_border: Color::Rgb(203, 166, 247),
             error: Color::Rgb(243, 139, 168),
             success: Color::Rgb(166, 227, 161),
         }
     }
 
-    /// Monokai - warm colors on dark background
-    pub fn monokai() -> Self {
+    /// Gruvbox - retro groove, earthy tones
+    pub fn gruvbox() -> Self {
         Self {
-            name: "monokai".to_string(),
-            background: Color::Rgb(39, 40, 34),
-            foreground: Color::Rgb(248, 248, 242),
-            accent: Color::Rgb(255, 102, 102),
-            secondary: Color::Rgb(117, 113, 97),
-            highlight: Color::Rgb(230, 219, 116),
-            border: Color::Rgb(102, 102, 102),
-            focused_border: Color::Rgb(248, 248, 242),
-            error: Color::Rgb(255, 102, 102),
-            success: Color::Rgb(166, 226, 46),
-        }
-    }
-
-    /// Light theme - clean white background
-    pub fn light() -> Self {
-        Self {
-            name: "light".to_string(),
-            background: Color::White,
-            foreground: Color::Black,
-            accent: Color::Blue,
-            secondary: Color::Rgb(117, 113, 113),
-            highlight: Color::Magenta,
-            border: Color::DarkGray,
-            focused_border: Color::Cyan,
-            error: Color::Red,
-            success: Color::Green,
-        }
-    }
-
-    /// Dark theme - standard dark mode
-    pub fn dark() -> Self {
-        Self {
-            name: "dark".to_string(),
-            background: Color::Black,
-            foreground: Color::White,
-            accent: Color::Blue,
-            secondary: Color::Gray,
-            highlight: Color::Yellow,
-            border: Color::DarkGray,
-            focused_border: Color::Magenta,
-            error: Color::Red,
-            success: Color::Green,
-        }
-    }
-
-    /// Retro/Vaporwave - nostalgic 80s aesthetic
-    pub fn retro() -> Self {
-        Self {
-            name: "retro".to_string(),
-            background: Color::Rgb(25, 20, 40),
-            foreground: Color::Rgb(255, 170, 204),
-            accent: Color::Rgb(0, 255, 255),
-            secondary: Color::Rgb(128, 85, 170),
-            highlight: Color::Rgb(255, 255, 170),
-            border: Color::Rgb(170, 85, 170),
-            focused_border: Color::Rgb(255, 255, 170),
-            error: Color::Rgb(255, 85, 170),
-            success: Color::Rgb(0, 255, 170),
+            name: "gruvbox".to_string(),
+            background: Color::Rgb(40, 40, 40),
+            foreground: Color::Rgb(235, 219, 178),
+            accent: Color::Rgb(250, 189, 47),
+            secondary: Color::Rgb(146, 131, 116),
+            highlight: Color::Rgb(60, 56, 54),
+            border: Color::Rgb(80, 73, 69),
+            focused_border: Color::Rgb(250, 189, 47),
+            error: Color::Rgb(251, 73, 52),
+            success: Color::Rgb(184, 187, 38),
         }
     }
 
@@ -115,22 +115,29 @@ impl Theme {
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "terminal" => Some(Self::terminal()),
-            "tokyo" => Some(Self::tokyo()),
-            "monokai" => Some(Self::monokai()),
-            "light" => Some(Self::light()),
-            "dark" => Some(Self::dark()),
-            "retro" => Some(Self::retro()),
+            "tokyo_night" => Some(Self::tokyo_night()),
+            "monokai_pro" => Some(Self::monokai_pro()),
+            "nord" => Some(Self::nord()),
+            "catppuccin_mocha" => Some(Self::catppuccin_mocha()),
+            "gruvbox" => Some(Self::gruvbox()),
             _ => None,
         }
     }
 
     /// Get a list of all available theme names
     pub fn all_themes() -> Vec<&'static str> {
-        vec!["terminal", "tokyo", "monokai", "light", "dark", "retro"]
+        vec![
+            "terminal",
+            "tokyo_night",
+            "monokai_pro",
+            "nord",
+            "catppuccin_mocha",
+            "gruvbox",
+        ]
     }
 
     /// Get the default theme
     pub fn default_theme() -> Self {
-        Self::dark()
+        Self::catppuccin_mocha()
     }
 }
