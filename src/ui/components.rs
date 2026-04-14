@@ -1,3 +1,41 @@
+/*
+AUDIT REPORT: Border Usage in src/ui/
+- src/ui/settings.rs:31 (Settings Title) -> REDUCE
+- src/ui/settings.rs:76 (Settings List) -> REDUCE
+- src/ui/settings.rs:92 (Help Text) -> REMOVE
+- src/ui/components.rs:97 (Error Overlay) -> KEEP
+- src/ui/components.rs:174 (Status Bar) -> REDUCE
+- src/ui/app.rs:401 (Sidebar Menu) -> REDUCE
+- src/ui/app.rs:421 (Videos List) -> REDUCE
+- src/ui/app.rs:437 (Context Menu) -> KEEP
+- src/ui/app.rs:488 (History List) -> REDUCE
+- src/ui/app.rs:518 (Saved List) -> REDUCE
+- src/ui/app.rs:541 (Playlist Prompt) -> REDUCE
+- src/ui/app.rs:572 (Playlist Videos) -> REDUCE
+- src/ui/app.rs:597 (Playlists List) -> REDUCE
+- src/ui/app.rs:621 (Search Input) -> REDUCE
+- src/ui/app.rs:657 (Search Results) -> REDUCE
+
+MODERN/MINIMAL DESIGN RULES:
+1. No `Borders::ALL` on content blocks.
+2. Use `PADDING_MD` for item interiors.
+3. Use `ITEM_GAP` between list items.
+4. Accent color for selection/focus only.
+5. Secondary color for metadata/timestamps.
+*/
+
+pub struct DesignTokens;
+impl DesignTokens {
+    pub const PADDING_SM: u16 = 1;
+    pub const PADDING_MD: u16 = 2;
+    pub const PADDING_LG: u16 = 3;
+    pub const ITEM_GAP: u16 = 1;
+    pub const SIDEBAR_WIDTH: u16 = 15;
+    pub const TRUNCATE_LEN: usize = 40;
+    pub const MIN_TERMINAL_WIDTH: u16 = 80;
+    pub const MIN_TERMINAL_HEIGHT: u16 = 20;
+}
+
 use crate::ui::theme::Theme;
 use ratatui::{
     layout::Rect,
