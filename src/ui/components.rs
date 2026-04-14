@@ -38,10 +38,10 @@ impl DesignTokens {
 
 use crate::ui::theme::Theme;
 use ratatui::{
-    layout::Rect,
+    layout::{Direction, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Padding, Paragraph},
     Frame,
 };
 
@@ -110,6 +110,152 @@ impl ErrorCategory {
     }
 }
 
+/// Display a modern header with title and optional subtitle
+pub fn render_header(f: &mut Frame, area: Rect, title: &str, subtitle: &str, theme: &Theme) {
+    let mut lines = vec![Line::from(vec![Span::styled(
+        title,
+        Style::default().fg(theme.accent).bold(),
+    )])];
+
+    if !subtitle.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            subtitle,
+            Style::default().fg(theme.secondary),
+        )]));
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(theme.foreground))
+        .block(Block::default().padding(Padding::uniform(DesignTokens::PADDING_MD)));
+
+    f.render_widget(paragraph, area);
+}
+
+/// Display a modern item card for lists
+pub fn render_item_card(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    meta: &str,
+    theme: &Theme,
+    is_selected: bool,
+    is_focused: bool,
+) {
+    let title_truncated = if title.len() > DesignTokens::TRUNCATE_LEN {
+        format!("{}...", &title[..DesignTokens::TRUNCATE_LEN - 3])
+    } else {
+        title.to_string()
+    };
+
+    let content = vec![
+        Line::from(vec![Span::styled(
+            &title_truncated,
+            Style::default().fg(theme.foreground).bold(),
+        )]),
+        Line::from(vec![Span::styled(
+            meta,
+            Style::default().fg(theme.secondary),
+        )]),
+    ];
+
+    let mut style = Style::default().fg(theme.foreground);
+    if is_selected {
+        style = style.bg(theme.highlight);
+    }
+
+    let mut borders = Borders::NONE;
+    let mut border_style = Style::default().fg(theme.border);
+    if is_focused {
+        borders = Borders::LEFT;
+        border_style = Style::default().fg(theme.accent);
+    }
+
+    let block = Block::default()
+        .borders(borders)
+        .border_style(border_style)
+        .padding(Padding::uniform(DesignTokens::PADDING_MD));
+
+    let paragraph = Paragraph::new(content).block(block).style(style);
+
+    f.render_widget(paragraph, area);
+}
+
+/// Display a modern divider line
+pub fn render_divider(f: &mut Frame, area: Rect, theme: &Theme, direction: Direction) {
+    let horizontal = direction == Direction::Horizontal;
+    let symbol = if horizontal { "─" } else { "│" };
+    let line = Line::from(symbol.repeat(if horizontal {
+        area.width as usize
+    } else {
+        area.height as usize
+    }))
+    .style(Style::default().fg(theme.border));
+
+    let paragraph = Paragraph::new(line);
+    f.render_widget(paragraph, area);
+}
+
+/// Display a modern tab bar
+pub fn render_tab_bar(
+    f: &mut Frame,
+    area: Rect,
+    tabs: &[&str],
+    selected_index: usize,
+    theme: &Theme,
+) {
+    let mut spans = vec![];
+    for (i, tab) in tabs.iter().enumerate() {
+        let style = if i == selected_index {
+            Style::default().fg(theme.accent).bold()
+        } else {
+            Style::default().fg(theme.secondary)
+        };
+        spans.push(Span::styled(*tab, style));
+        if i < tabs.len() - 1 {
+            spans.push(Span::raw("  "));
+        }
+    }
+
+    let paragraph = Paragraph::new(Line::from(spans))
+        .block(Block::default().padding(Padding::uniform(DesignTokens::PADDING_SM)));
+
+    f.render_widget(paragraph, area);
+}
+
+/// Display a modern progress bar
+pub fn render_progress_bar(f: &mut Frame, area: Rect, current: u64, total: u64, theme: &Theme) {
+    use ratatui::widgets::Gauge;
+
+    let ratio = if total > 0 {
+        current as f64 / total as f64
+    } else {
+        0.0
+    };
+
+    let gauge = Gauge::default()
+        .block(Block::default().borders(Borders::NONE))
+        .gauge_style(Style::default().fg(theme.accent).bg(theme.border))
+        .ratio(ratio);
+
+    f.render_widget(gauge, area);
+}
+
+/// Display a modern info bar with label-value pairs
+pub fn render_info_bar(f: &mut Frame, area: Rect, items: &[(&str, &str)], theme: &Theme) {
+    let mut lines = vec![];
+    for (label, value) in items {
+        lines.push(Line::from(vec![
+            Span::styled(format!("{}: ", label), Style::default().fg(theme.secondary)),
+            Span::styled(*value, Style::default().fg(theme.foreground)),
+        ]));
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default().padding(Padding::uniform(DesignTokens::PADDING_MD)));
+
+    f.render_widget(paragraph, area);
+}
+
 /// Display an error message as an overlay in the UI
 pub fn render_error(f: &mut Frame, area: Rect, error: &str, suggestion: Option<&str>) {
     let content = if let Some(s) = suggestion {
@@ -164,10 +310,7 @@ pub fn render_empty_state(
         Line::from(message),
     ];
 
-    let block = Block::default().title(" ").borders(Borders::NONE);
-
     let paragraph = Paragraph::new(content)
-        .block(block)
         .style(Style::default().fg(theme.secondary))
         .alignment(ratatui::layout::Alignment::Center);
 
@@ -209,7 +352,7 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, message: &str, is_error: boo
 
     let content = Line::from(message).alignment(ratatui::layout::Alignment::Left);
 
-    let block = Block::default().borders(Borders::ALL).border_style(style);
+    let block = Block::default().borders(Borders::TOP).border_style(style);
 
     let paragraph = Paragraph::new(content)
         .block(block)
