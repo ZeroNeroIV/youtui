@@ -2,6 +2,7 @@ use rusqlite::{Connection, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tracing::info;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -131,6 +132,7 @@ impl Database {
         title: &str,
         channel: Option<&str>,
     ) -> Result<i64> {
+        info!("DEBUG DB: Adding to history: {} - {}", title, video_id);
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO watch_history (video_id, title, channel) VALUES (?1, ?2, ?3)",
@@ -148,7 +150,7 @@ impl Database {
              LIMIT ?1",
         )?;
 
-        let entries = stmt
+        let mut entries = stmt
             .query_map([limit], |row| {
                 Ok(HistoryEntry {
                     id: row.get(0)?,
@@ -159,6 +161,8 @@ impl Database {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
+
+        entries.dedup_by(|a, b| a.video_id == b.video_id);
 
         Ok(entries)
     }
@@ -308,6 +312,27 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
+    pub fn get_playlist_by_youtube_id(&self, youtube_id: &str) -> Result<Option<Playlist>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, created_at, is_imported, youtube_id FROM playlists WHERE youtube_id = ?1"
+        )?;
+        let result = stmt.query_row([youtube_id], |row| {
+            Ok(Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+                is_imported: row.get(3)?,
+                youtube_id: row.get(4)?,
+            })
+        });
+        match result {
+            Ok(p) => Ok(Some(p)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn sync_imported_playlist(
         &self,
         playlist_id: i64,
@@ -316,13 +341,24 @@ impl Database {
         channel: Option<&str>,
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
+
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_videos WHERE playlist_id = ?1 AND video_id = ?2)",
+            rusqlite::params![playlist_id, video_id],
+            |row| row.get(0),
+        )?;
+
+        if exists {
+            return Ok(0);
+        }
+
         let position: i32 = conn.query_row(
             "SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_videos WHERE playlist_id = ?1",
             [playlist_id],
             |row| row.get(0),
         )?;
         conn.execute(
-            "INSERT OR REPLACE INTO playlist_videos (playlist_id, video_id, title, channel, position) 
+            "INSERT INTO playlist_videos (playlist_id, video_id, title, channel, position) 
              VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![playlist_id, video_id, title, channel, position],
         )?;

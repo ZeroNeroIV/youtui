@@ -40,9 +40,19 @@ impl serde::Serialize for InvidiousError {
     }
 }
 
-// ============================================================================
-// Data Models
-// ============================================================================
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InvidiousStreams {
+    pub url: String,
+    #[serde(rename = "adaptiveFormats")]
+    pub adaptive_formats: Vec<InvidiousFormat>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InvidiousFormat {
+    pub url: String,
+    pub quality: String,
+    pub mime_type: String,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Video {
@@ -370,6 +380,13 @@ impl InvidiousClient {
 
         let playlist: PlaylistDetails = serde_json::from_str(&response)?;
         Ok(playlist)
+    }
+
+    pub async fn get_stream_url(&self, video_id: &str) -> Result<String, InvidiousError> {
+        let url = self.api_url(&format!("/videos/{}/streams", video_id));
+        let response = self.get(&url).await?;
+        let streams: InvidiousStreams = serde_json::from_str(&response)?;
+        Ok(streams.url)
     }
 }
 

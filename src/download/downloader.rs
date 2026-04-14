@@ -36,7 +36,9 @@ impl Downloader {
                 .arg("-o")
                 .arg(&output_path_str)
                 .arg("--no-warnings")
-                .arg("--progress");
+                .arg("--progress")
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
 
             match cmd.spawn() {
                 Ok(mut child) => {
@@ -74,6 +76,13 @@ impl Downloader {
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    if let Some(stderr) = child.stderr.take() {
+                        let reader = std::io::BufReader::new(stderr);
+                        for line in reader.lines().map_while(Result::ok) {
+                            tracing::debug!("[yt-dlp stderr] {}", line);
                         }
                     }
 

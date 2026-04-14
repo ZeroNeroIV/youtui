@@ -44,8 +44,16 @@ impl AppState {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PlayerInstanceMode {
+    Single,
+    Multiple,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    pub loop_playback: bool,
+    pub player_instance_mode: PlayerInstanceMode,
     pub default_quality: String,
     pub default_format: String,
     pub download_path: PathBuf,
@@ -53,12 +61,15 @@ pub struct Settings {
     pub api_instance_invidious: String,
     pub api_instance_piped: String,
     pub theme: String,
+    pub log_level: String,
     pub auto_play: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            loop_playback: false,
+            player_instance_mode: PlayerInstanceMode::Single,
             default_quality: "720".to_string(),
             default_format: "mp4".to_string(),
             download_path: dirs::video_dir().unwrap_or_else(|| PathBuf::from(".")),
@@ -66,6 +77,7 @@ impl Default for Settings {
             api_instance_invidious: "https://invidious.snopyta.org".to_string(),
             api_instance_piped: "https://pipedapi.kavin.rocks".to_string(),
             theme: "dark".to_string(),
+            log_level: "info".to_string(),
             auto_play: true,
         }
     }

@@ -4,10 +4,13 @@ use ratatui::{
     style::{Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
+use tracing::info;
 
-pub fn render(f: &mut ratatui::Frame, app: &mut App) {
-    let area = f.area();
+pub fn render_in_panel(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App) {
+    render(f, area, app);
+}
 
+pub fn render(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -32,6 +35,21 @@ pub fn render(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(title, chunks[0]);
 
     let settings_items: Vec<ListItem> = vec![
+        ListItem::new(format!(
+            "Loop Playback: {}",
+            if app.settings.loop_playback {
+                "On"
+            } else {
+                "Off"
+            }
+        )),
+        ListItem::new(format!(
+            "Instance Mode: {}",
+            match app.settings.player_instance_mode {
+                crate::config::settings::PlayerInstanceMode::Single => "Single",
+                crate::config::settings::PlayerInstanceMode::Multiple => "Multiple",
+            }
+        )),
         ListItem::new(format!("Quality: {}", app.settings.default_quality)),
         ListItem::new(format!("Format: {}", app.settings.default_format)),
         ListItem::new(format!(
@@ -49,6 +67,7 @@ pub fn render(f: &mut ratatui::Frame, app: &mut App) {
             "Auto Play: {}",
             if app.settings.auto_play { "On" } else { "Off" }
         )),
+        ListItem::new(format!("Log Level: {}", app.settings.log_level)),
     ];
 
     let settings_list = List::new(settings_items)
@@ -86,7 +105,7 @@ pub fn handle_events(app: &mut App, key: crossterm::event::KeyCode) {
             let i = match app.settings_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        7
+                        10
                     } else {
                         i - 1
                     }
@@ -97,7 +116,7 @@ pub fn handle_events(app: &mut App, key: crossterm::event::KeyCode) {
         }
         crossterm::event::KeyCode::Down => {
             let i = match app.settings_state.selected() {
-                Some(i) => (i + 1) % 8,
+                Some(i) => (i + 1) % 11,
                 None => 0,
             };
             app.settings_state.select(Some(i));
@@ -111,8 +130,22 @@ pub fn handle_events(app: &mut App, key: crossterm::event::KeyCode) {
 
 fn edit_setting(app: &mut App) {
     let selected = app.settings_state.selected().unwrap_or(0);
+    info!("DEBUG: Selected index on Enter -> {}", selected);
     match selected {
         0 => {
+            app.settings.loop_playback = !app.settings.loop_playback;
+        }
+        1 => {
+            app.settings.player_instance_mode = match app.settings.player_instance_mode {
+                crate::config::settings::PlayerInstanceMode::Single => {
+                    crate::config::settings::PlayerInstanceMode::Multiple
+                }
+                crate::config::settings::PlayerInstanceMode::Multiple => {
+                    crate::config::settings::PlayerInstanceMode::Single
+                }
+            };
+        }
+        2 => {
             let qualities = ["144", "240", "360", "480", "720", "1080", "1440", "2160"];
             let current_idx = qualities
                 .iter()
@@ -121,7 +154,7 @@ fn edit_setting(app: &mut App) {
             app.settings.default_quality =
                 qualities[(current_idx + 1) % qualities.len()].to_string();
         }
-        1 => {
+        3 => {
             let formats = ["mp4", "mkv", "webm", "mp3"];
             let current_idx = formats
                 .iter()
@@ -129,8 +162,25 @@ fn edit_setting(app: &mut App) {
                 .unwrap_or(0);
             app.settings.default_format = formats[(current_idx + 1) % formats.len()].to_string();
         }
-        2 => {}
-        3 => {
+        4 => {
+            if let Some(home) = dirs::home_dir() {
+                let paths = vec![
+                    home.join("Downloads"),
+                    home.join("Videos"),
+                    home.join("Videos/youtui"),
+                    dirs::data_local_dir()
+                        .map(|p| p.join("youtui-rs/downloads"))
+                        .unwrap_or_else(|| home.join("Downloads")),
+                ];
+                let current_str = app.settings.download_path.to_string_lossy().to_string();
+                let current_idx = paths
+                    .iter()
+                    .position(|p| p.to_string_lossy() == current_str)
+                    .unwrap_or(0);
+                app.settings.download_path = paths[(current_idx + 1) % paths.len()].clone();
+            }
+        }
+        5 => {
             let players = ["mpv", "vlc", "mplayer"];
             let current_idx = players
                 .iter()
@@ -138,9 +188,13 @@ fn edit_setting(app: &mut App) {
                 .unwrap_or(0);
             app.settings.player = players[(current_idx + 1) % players.len()].to_string();
         }
-        4 => {}
-        5 => {}
         6 => {
+            // API instances might need a text input, but for now we keep it simple or leave it
+        }
+        7 => {
+            // API instances might need a text input, but for now we keep it simple or leave it
+        }
+        8 => {
             let themes = crate::ui::theme::Theme::all_themes();
             let current_idx = themes
                 .iter()
@@ -152,8 +206,17 @@ fn edit_setting(app: &mut App) {
                 app.theme = new_theme;
             }
         }
-        7 => {
+        9 => {
             app.settings.auto_play = !app.settings.auto_play;
+        }
+        10 => {
+            let levels = ["trace", "debug", "info", "warn", "error"];
+            let current_idx = levels
+                .iter()
+                .position(|&l| l == app.settings.log_level)
+                .unwrap_or(2); // Default to "info"
+            app.settings.log_level = levels[(current_idx + 1) % levels.len()].to_string();
+            crate::utils::logger::update_log_level(&app.settings.log_level);
         }
         _ => {}
     }

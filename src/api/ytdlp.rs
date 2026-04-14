@@ -240,10 +240,27 @@ impl YtdlpWrapper {
     /// Get the best available stream URL for a video
     /// Used for playback fallback
     pub fn get_stream_url(video_id: &str) -> Result<String, YtdlpError> {
+        Self::get_stream_url_with_quality(video_id, "best")
+    }
+
+    /// Get stream URL with specific quality
+    pub fn get_stream_url_with_quality(
+        video_id: &str,
+        quality: &str,
+    ) -> Result<String, YtdlpError> {
+        let quality_format = match quality {
+            "1080p" => "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+            "720p" => "bestvideo[height<=720]+bestaudio/best[height<=720]",
+            "480p" => "bestvideo[height<=480]+bestaudio/best[height<=480]",
+            "worst" => "worst+worst",
+            "bestvideo+bestaudio" => "bestvideo+bestaudio/best",
+            _ => "best",
+        };
+
         let args = [
             &format!("https://youtube.com/watch?v={}", video_id),
             "-f",
-            "best",
+            quality_format,
             "-g",
             "--no-warnings",
         ];
@@ -311,5 +328,92 @@ mod tests {
         // Should return error for empty query
         let result = YtdlpWrapper::search("", 5);
         assert!(result.is_err() || result.unwrap().is_empty());
+    }
+}
+
+// ============================================================================
+// Playlist Support (for Mix and regular playlists)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YtdlpPlaylistVideo {
+    pub id: String,
+    pub title: String,
+    pub channel: Option<String>,
+    pub duration: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum YtdlpPlaylistError {
+    #[error("yt-dlp not found in PATH")]
+    NotInstalled,
+    #[error("Failed to execute yt-dlp: {0}")]
+    ExecutionFailed(String),
+    #[error("Failed to parse output: {0}")]
+    ParseError(String),
+}
+
+impl serde::Serialize for YtdlpPlaylistError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+pub struct YtdlpPlaylist;
+
+impl YtdlpPlaylist {
+    pub fn get_playlist(
+        url: &str,
+        max_videos: usize,
+    ) -> Result<Vec<YtdlpPlaylistVideo>, YtdlpPlaylistError> {
+        if !YtdlpWrapper::is_available() {
+            return Err(YtdlpPlaylistError::NotInstalled);
+        }
+
+        let output = Command::new("yt-dlp")
+            .arg(url)
+            .arg("--flat-playlist")
+            .arg("--print=%(id)s|%(title)s|%(channel)s|%(duration)s")
+            .arg("--no-warnings")
+            .output()
+            .map_err(|e| YtdlpPlaylistError::ExecutionFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(YtdlpPlaylistError::ExecutionFailed(stderr.to_string()));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut videos = Vec::new();
+
+        for line in stdout.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.splitn(4, '|').collect();
+            if parts.len() >= 2 {
+                let video = YtdlpPlaylistVideo {
+                    id: parts[0].to_string(),
+                    title: parts[1].to_string(),
+                    channel: parts
+                        .get(2)
+                        .map(|s| s.to_string())
+                        .filter(|s| !s.is_empty()),
+                    duration: parts
+                        .get(3)
+                        .map(|s| s.to_string())
+                        .filter(|s| !s.is_empty()),
+                };
+                videos.push(video);
+            }
+            if videos.len() >= max_videos {
+                break;
+            }
+        }
+
+        Ok(videos)
     }
 }

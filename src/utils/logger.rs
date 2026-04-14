@@ -1,75 +1,81 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tracing_appender::non_blocking;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{fmt, layer::SubscriberExt, reload, util::SubscriberInitExt, EnvFilter};
 
-use crate::config::{is_development, log_to_file, log_to_terminal};
+pub struct LoggerConfig {
+    pub is_dev: bool,
+    pub to_terminal: bool,
+    pub log_level: String,
+}
+
+static LOG_HANDLE: OnceLock<reload::Handle<EnvFilter, tracing_subscriber::Registry>> =
+    OnceLock::new();
 
 fn get_log_dir() -> Option<PathBuf> {
     dirs::data_local_dir().map(|p| p.join("youtui-rs").join("logs"))
 }
 
-pub fn init_logger() {
-    let is_dev = is_development();
-    let to_file = log_to_file();
-    let to_terminal = log_to_terminal();
+fn get_log_filename() -> String {
+    let now = chrono::Local::now();
+    format!("youtui-rs-{}.log", now.format("%Y-%m-%d_%H-%M-%S"))
+}
 
-    if !is_dev && to_file {
-        return;
-    }
-
+pub fn init_logger(config: LoggerConfig) -> Option<non_blocking::WorkerGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        if is_dev {
+        if config.is_dev {
             EnvFilter::new("debug,youtui_rs=debug")
         } else {
-            EnvFilter::new("info")
+            EnvFilter::new(&config.log_level)
         }
     });
 
-    let registry = tracing_subscriber::registry().with(filter);
+    let (reload_layer, handle) = reload::Layer::new(filter);
+    LOG_HANDLE.set(handle).expect("Logger handle already set");
 
-    if is_dev && to_file {
-        if let Some(log_dir) = get_log_dir() {
-            let _ = std::fs::create_dir_all(&log_dir);
-            let file_appender = RollingFileAppender::new(Rotation::DAILY, &log_dir, "youtui.log");
-            let (non_blocking, _guard) = non_blocking(file_appender);
+    let registry = tracing_subscriber::registry().with(reload_layer);
 
-            let file_layer = fmt::layer()
+    if let Some(log_dir) = get_log_dir() {
+        let _ = std::fs::create_dir_all(&log_dir);
+        let file_appender = RollingFileAppender::new(Rotation::DAILY, &log_dir, get_log_filename());
+        let (non_blocking, guard) = non_blocking(file_appender);
+
+        let file_layer = fmt::layer()
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_ansi(false)
+            .with_writer(non_blocking);
+
+        if config.to_terminal {
+            let stdout_layer = fmt::layer()
                 .with_target(true)
-                .with_thread_ids(true)
-                .with_ansi(false)
-                .with_writer(non_blocking);
+                .with_level(true)
+                .with_writer(std::io::stdout);
 
-            if to_terminal {
-                let stdout_layer = fmt::layer()
-                    .with_target(true)
-                    .with_level(true)
-                    .with_writer(std::io::stdout);
-
-                registry.with(file_layer).with(stdout_layer).init();
-            } else {
-                registry.with(file_layer).init();
-            }
-            return;
+            registry.with(file_layer).with(stdout_layer).init();
+        } else {
+            registry.with(file_layer).init();
         }
+        return Some(guard);
     }
 
-    if is_dev && to_terminal {
+    if config.to_terminal {
         let stdout_layer = fmt::layer()
             .with_target(true)
             .with_level(true)
             .with_writer(std::io::stdout);
 
         registry.with(stdout_layer).init();
-        return;
     }
+    None
+}
 
-    if is_dev {
-        let stdout_layer = fmt::layer()
-            .with_target(true)
-            .with_level(true)
-            .with_writer(std::io::stdout);
-
-        registry.with(stdout_layer).init();
+pub fn update_log_level(level: &str) {
+    if let Some(handle) = LOG_HANDLE.get() {
+        let new_filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
+        handle
+            .modify(|filter| *filter = new_filter)
+            .expect("Failed to update log level");
     }
 }

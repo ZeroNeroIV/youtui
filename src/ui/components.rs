@@ -1,3 +1,4 @@
+use crate::ui::theme::Theme;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -107,6 +108,7 @@ pub fn render_error(f: &mut Frame, area: Rect, error: &str, suggestion: Option<&
 pub fn render_empty_state(
     f: &mut Frame,
     area: Rect,
+    theme: &Theme,
     title: &str,
     message: &str,
     icon: Option<&str>,
@@ -118,7 +120,7 @@ pub fn render_empty_state(
         Line::from(vec![
             Span::raw(icon_str),
             Span::raw(" "),
-            Span::styled(title, Style::default().bold().fg(Color::Cyan)),
+            Span::styled(title, Style::default().bold().fg(theme.accent)),
         ]),
         Line::from(""),
         Line::from(message),
@@ -128,7 +130,7 @@ pub fn render_empty_state(
 
     let paragraph = Paragraph::new(content)
         .block(block)
-        .style(Style::default().fg(Color::DarkGray))
+        .style(Style::default().fg(theme.secondary))
         .alignment(ratatui::layout::Alignment::Center);
 
     f.render_widget(paragraph, area);

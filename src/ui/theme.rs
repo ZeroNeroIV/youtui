@@ -2,6 +2,7 @@ use ratatui::style::Color;
 
 #[derive(Clone)]
 pub struct Theme {
+    pub focused_border: Color,
     pub name: String,
     pub background: Color,
     pub foreground: Color,
@@ -24,6 +25,7 @@ impl Theme {
             secondary: Color::DarkGray,
             highlight: Color::Yellow,
             border: Color::Green,
+            focused_border: Color::Magenta,
             error: Color::Red,
             success: Color::LightGreen,
         }
@@ -39,6 +41,7 @@ impl Theme {
             secondary: Color::Rgb(98, 114, 164),
             highlight: Color::Rgb(203, 166, 247),
             border: Color::Rgb(69, 71, 90),
+            focused_border: Color::Rgb(137, 180, 250),
             error: Color::Rgb(243, 139, 168),
             success: Color::Rgb(166, 227, 161),
         }
@@ -54,6 +57,7 @@ impl Theme {
             secondary: Color::Rgb(117, 113, 97),
             highlight: Color::Rgb(230, 219, 116),
             border: Color::Rgb(102, 102, 102),
+            focused_border: Color::Rgb(248, 248, 242),
             error: Color::Rgb(255, 102, 102),
             success: Color::Rgb(166, 226, 46),
         }
@@ -69,6 +73,7 @@ impl Theme {
             secondary: Color::Rgb(117, 113, 113),
             highlight: Color::Magenta,
             border: Color::DarkGray,
+            focused_border: Color::Cyan,
             error: Color::Red,
             success: Color::Green,
         }
@@ -84,6 +89,7 @@ impl Theme {
             secondary: Color::Gray,
             highlight: Color::Yellow,
             border: Color::DarkGray,
+            focused_border: Color::Magenta,
             error: Color::Red,
             success: Color::Green,
         }
@@ -99,6 +105,7 @@ impl Theme {
             secondary: Color::Rgb(128, 85, 170),
             highlight: Color::Rgb(255, 255, 170),
             border: Color::Rgb(170, 85, 170),
+            focused_border: Color::Rgb(255, 255, 170),
             error: Color::Rgb(255, 85, 170),
             success: Color::Rgb(0, 255, 170),
         }

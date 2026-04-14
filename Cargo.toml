@@ -3,7 +3,7 @@ name = "youtui-rs"
 version = "0.1.0"
 edition = "2021"
 description = "A feature-rich YouTube terminal client in Rust"
-authors = ["You"]
+authors = ["ZeroNeroIV"]
 license = "MIT"
 repository = ""
 
@@ -37,6 +37,8 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
 arboard = "3"
+clap = { version = "4", features = ["derive"] }
+async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

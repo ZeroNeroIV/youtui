@@ -157,6 +157,8 @@ impl App {
             let (playlist_add_tx, playlist_add_rx) = tokio::sync::mpsc::channel(10);
             let (settings_tx, settings_rx) = tokio::sync::mpsc::channel(10);
             let (download_tx, download_rx) = tokio::sync::mpsc::channel(10);
+            let (playback_ended_tx, _playback_ended_rx) = tokio::sync::mpsc::channel(1);
+            let (notification_tx, _notification_rx) = tokio::sync::broadcast::channel(16);
             
             Ok(Self {
                 mode: AppMode::Main,
@@ -210,7 +212,7 @@ impl App {
                 settings_tx,
                 settings_rx,
                 db: std::sync::Arc::new(crate::db::connection::Database::new()?),
-                player: std::sync::Arc::new(crate::player::mpv::MpvPlayer::new()),
+                                player: std::sync::Arc::new(crate::player::mpv::MpvPlayer::new(playback_ended_tx, notification_tx)),
                 history_results: Vec::new(),
                 history_state: ListState::default(),
                 saved_results: Vec::new(),
@@ -448,7 +450,7 @@ impl App {
                 }
             }
             AppMode::Settings => {
-                crate::ui::settings::render(f, self);
+                 crate::ui::settings::render(f, self.content_area, self);
             }
             AppMode::Search => {
                 self.render_search(f);
@@ -626,13 +628,14 @@ impl App {
         } else if let Some(ref error) = self.search_error {
             components::render_error(f, chunks[1], error, None);
         } else if self.search_results.is_empty() {
-            components::render_empty_state(
-                f,
-                chunks[1],
-                "No Results",
-                "Enter a search term to find videos",
-                Some("🔍"),
-            );
+             components::render_empty_state(
+                 f,
+                 chunks[1],
+                 &self.theme,
+                 "No Results",
+                 "Enter a search term to find videos",
+                 Some("🔍"),
+             );
         } else {
             let results: Vec<ListItem> = self
                 .search_results
@@ -1022,9 +1025,10 @@ impl App {
         let video_id = entry.video_id.clone();
         let title = entry.title.clone();
         let channel = entry.channel.clone();
+        let quality = self.settings.default_quality.clone();
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &[]).await;
+            let _ = player.play(&url, &quality, &[]).await;
         });
     }
 
@@ -1035,9 +1039,10 @@ impl App {
         let video_id = video.video_id.clone();
         let title = video.title.clone();
         let channel = video.channel.clone();
+        let quality = self.settings.default_quality.clone();
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &[]).await;
+            let _ = player.play(&url, &quality, &[]).await;
         });
     }
 
@@ -1048,9 +1053,10 @@ impl App {
         let video_id = video.video_id.clone();
         let title = video.title.clone();
         let channel = video.author.clone();
+        let quality = self.settings.default_quality.clone();
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &[]).await;
+            let _ = player.play(&url, &quality, &[]).await;
         });
     }
 
@@ -1058,7 +1064,8 @@ impl App {
         let player = self.player.clone();
         let db = self.db.clone();
         let title = video_title.to_string();
-
+        let quality = self.settings.default_quality.clone();
+        
         let (video_id, channel) = match video_title {
             "Video 1: Rust for Beginners" => ("S_S_S_S_S1_", "Rust Lang"),
             "Video 2: Advanced Ratatui Patterns" => ("S_S_S_S_S2_", "Ratatui"),
@@ -1070,14 +1077,14 @@ impl App {
             "Video 8: Error Handling Best Practices" => ("S_S_S_S_S8_", "Rust Tips"),
             _ => ("dQw4w9WgXcQ", "Rick Astley"),
         };
-
+        
         let url = format!("https://www.youtube.com/watch?v={}", video_id);
         let video_id = video_id.to_string();
         let channel = Some(channel.to_string());
-
+        
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &[]).await;
+            let _ = player.play(&url, &quality, &[]).await;
         });
     }
 
@@ -1180,9 +1187,10 @@ impl App {
         let video_id = video.video_id.clone();
         let title = video.title.clone();
         let channel = video.channel.clone();
+        let quality = self.settings.default_quality.clone();
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &[]).await;
+            let _ = player.play(&url, &quality, &[]).await;
         });
     }
 
@@ -1670,7 +1678,7 @@ impl App {
                 ),
                 _ => ("Empty", "No items to display", None),
             };
-            components::render_empty_state(f, self.content_area, title, message, icon);
+             components::render_empty_state(f, self.content_area, &self.theme, title, message, icon);
         }
     }
 
