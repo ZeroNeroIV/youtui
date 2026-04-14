@@ -15,10 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
         uses: actions/cache@v3
@@ -43,6 +40,6 @@ jobs:
         run: cargo build --release
 
       - name: Security audit
-        uses: actions/rust-lang@main
-        with:
-          command: cargo audit
+        run: |
+          cargo install cargo-audit
+          cargo audit
