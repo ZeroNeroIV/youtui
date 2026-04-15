@@ -1267,7 +1267,7 @@ Max Concurrent: 4 (Wave 1) then 5 (Wave 2)
 
   **Commit**: NO (part of Task 12 commit)
 
-- [ ] 12. **Commit + Push** — `quick`
+- [x] 12. **Commit + Push** — `quick`
 
   **What to do**:
   - Stage all changed files

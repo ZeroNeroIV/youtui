@@ -13,7 +13,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
-    widgets::{Block, Borders, List, ListItem, ListState, Padding, Paragraph},
+    widgets::{Block, Borders, ListState, Padding, Paragraph},
     Terminal,
 };
 use std::io;
@@ -392,76 +392,7 @@ impl App {
     fn render(&mut self, f: &mut ratatui::Frame) {
         match self.mode {
             AppMode::Main => {
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
-                    .split(f.area());
-
-                self.sidebar_area = chunks[0];
-                self.content_area = chunks[1];
-
-                let sidebar_items: Vec<ListItem> = self
-                    .sidebar_items
-                    .iter()
-                    .map(|i| ListItem::new(i.as_str()))
-                    .collect();
-                let sidebar = List::new(sidebar_items)
-                    .block(
-                        Block::default()
-                            .title("Menu")
-                            .borders(Borders::NONE)
-                            .border_style(self.theme.border),
-                    )
-                    .highlight_style(
-                        ratatui::style::Style::default()
-                            .fg(self.theme.accent)
-                            .add_modifier(ratatui::style::Modifier::BOLD),
-                    )
-                    .highlight_symbol("> ");
-                f.render_stateful_widget(sidebar, self.sidebar_area, &mut self.sidebar_state);
-
-                let items: Vec<ListItem> = self
-                    .items
-                    .iter()
-                    .map(|i| ListItem::new(i.as_str()))
-                    .collect();
-                let content = List::new(items)
-                    .block(
-                        Block::default()
-                            .title("Videos")
-                            .borders(Borders::NONE)
-                            .border_style(self.theme.border),
-                    )
-                    .highlight_style(
-                        ratatui::style::Style::default()
-                            .fg(self.theme.accent)
-                            .add_modifier(ratatui::style::Modifier::BOLD),
-                    )
-                    .highlight_symbol(">> ");
-                f.render_stateful_widget(content, self.content_area, &mut self.list_state);
-
-                if self.show_context_menu {
-                    let area = Rect::new(self.context_menu_pos.0, self.context_menu_pos.1, 20, 6);
-                    let menu = Paragraph::new(
-                        "1. Play\n2. Save\n3. Download\n4. Add to Playlist\n5. Cancel",
-                    )
-                    .block(
-                        Block::default()
-                            .title("Options")
-                            .borders(Borders::ALL)
-                            .border_style(self.theme.accent),
-                    );
-                    f.render_widget(ratatui::widgets::Clear, area);
-                    f.render_widget(menu, area);
-                }
-
-                if self.current_error.is_some() {
-                    self.render_error_overlay(f);
-                } else if self.is_loading {
-                    self.render_loading_overlay(f);
-                } else if self.items.is_empty() {
-                    self.render_empty_state(f);
-                }
+                self.render_main_view(f);
             }
             AppMode::Settings => {
                 crate::ui::settings::render(f, self.content_area, self);
@@ -478,6 +409,117 @@ impl App {
             AppMode::Playlist => {
                 self.render_playlist(f);
             }
+        }
+    }
+
+    fn render_main_view(&mut self, f: &mut ratatui::Frame) {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(15), Constraint::Percentage(85)])
+            .split(f.area());
+
+        self.sidebar_area = chunks[0];
+        self.content_area = chunks[1];
+
+        let item_height = 6 + components::DesignTokens::ITEM_GAP;
+        let sidebar_offset = self.sidebar_state.selected().unwrap_or(0);
+        let sidebar_visible_count = (self.sidebar_area.height / item_height) as usize;
+
+        for (i, item) in self
+            .sidebar_items
+            .iter()
+            .enumerate()
+            .skip(sidebar_offset)
+            .take(sidebar_visible_count)
+        {
+            let rect = Rect::new(
+                self.sidebar_area.x,
+                self.sidebar_area.y + (i - sidebar_offset) as u16 * item_height,
+                self.sidebar_area.width,
+                6,
+            );
+            let is_selected = self.sidebar_state.selected() == Some(i);
+            components::render_item_card(f, rect, item, "", &self.theme, is_selected, false);
+        }
+
+        let content_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Length(1),
+                Constraint::Min(0),
+                Constraint::Length(3),
+            ])
+            .split(self.content_area);
+
+        components::render_header(
+            f,
+            content_chunks[0],
+            "Videos",
+            &format!("• {} items", self.items.len()),
+            &self.theme,
+        );
+
+        components::render_divider(f, content_chunks[1], &self.theme, Direction::Horizontal);
+
+        if self.items.is_empty() {
+            components::render_empty_state(
+                f,
+                content_chunks[2],
+                &self.theme,
+                "Videos",
+                "No videos available",
+                Some("📺"),
+            );
+        } else {
+            let content_offset = self.list_state.selected().unwrap_or(0);
+            let content_visible_count = (content_chunks[2].height / item_height) as usize;
+
+            for (i, item) in self
+                .items
+                .iter()
+                .enumerate()
+                .skip(content_offset)
+                .take(content_visible_count)
+            {
+                let rect = Rect::new(
+                    content_chunks[2].x,
+                    content_chunks[2].y + (i - content_offset) as u16 * item_height,
+                    content_chunks[2].width,
+                    6,
+                );
+                let is_selected = self.list_state.selected() == Some(i);
+                components::render_item_card(f, rect, item, "", &self.theme, is_selected, false);
+            }
+        }
+
+        components::render_info_bar(
+            f,
+            content_chunks[3],
+            &[("Theme", &self.theme.name)],
+            &self.theme,
+        );
+
+        if self.show_context_menu {
+            let area = Rect::new(self.context_menu_pos.0, self.context_menu_pos.1, 20, 6);
+            let menu =
+                Paragraph::new("1. Play\n2. Save\n3. Download\n4. Add to Playlist\n5. Cancel")
+                    .block(
+                        Block::default()
+                            .title("Options")
+                            .borders(Borders::LEFT)
+                            .border_style(self.theme.accent),
+                    );
+            f.render_widget(ratatui::widgets::Clear, area);
+            f.render_widget(menu, area);
+        }
+
+        if self.current_error.is_some() {
+            self.render_error_overlay(f);
+        } else if self.is_loading {
+            self.render_loading_overlay(f);
+        } else if self.items.is_empty() {
+            self.render_empty_state(f);
         }
     }
 
@@ -618,20 +660,52 @@ impl App {
     fn render_playlist(&mut self, f: &mut ratatui::Frame) {
         if let Some(prompt_mode) = self.playlist_prompt_mode {
             let title = match prompt_mode {
-                PlaylistPromptMode::New => " Create New Playlist (Enter to create, Esc to cancel) ",
-                PlaylistPromptMode::Import => {
-                    " Import YouTube Playlist URL (Enter to import, Esc to cancel) "
-                }
+                PlaylistPromptMode::New => "Create New Playlist",
+                PlaylistPromptMode::Import => "Import YouTube Playlist",
             };
-            let input = Paragraph::new(self.playlist_prompt.as_str()).block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::NONE)
-                    .border_style(self.theme.accent),
+            let subtitle = match prompt_mode {
+                PlaylistPromptMode::New => "Enter name and press Enter to create, Esc to cancel",
+                PlaylistPromptMode::Import => "Enter URL and press Enter to import, Esc to cancel",
+            };
+
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                    Constraint::Length(3),
+                ])
+                .split(f.area());
+
+            components::render_header(f, chunks[0], title, subtitle, &self.theme);
+
+            let input = Paragraph::new(self.playlist_prompt.as_str())
+                .block(
+                    Block::default()
+                        .borders(Borders::NONE)
+                        .padding(Padding::uniform(components::DesignTokens::PADDING_MD)),
+                )
+                .style(Style::default().fg(self.theme.foreground));
+            f.render_widget(input, chunks[1]);
+
+            components::render_info_bar(
+                f,
+                chunks[2],
+                &[("Enter", "Confirm"), ("Esc", "Cancel")],
+                &self.theme,
             );
-            f.render_widget(input, f.area());
             return;
         }
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Length(1),
+                Constraint::Min(0),
+                Constraint::Length(3),
+            ])
+            .split(f.area());
 
         if !self.playlist_videos.is_empty() {
             let playlist_name = self
@@ -640,58 +714,114 @@ impl App {
                 .map(|p| p.name.as_str())
                 .unwrap_or("Unknown Playlist");
 
-            let items: Vec<ListItem> = self
+            components::render_header(
+                f,
+                chunks[0],
+                &format!("Playlist: {}", playlist_name),
+                "Videos in this playlist",
+                &self.theme,
+            );
+
+            components::render_divider(f, chunks[1], &self.theme, Direction::Horizontal);
+
+            let item_height = 6 + components::DesignTokens::ITEM_GAP;
+            let offset = self.playlist_videos_state.selected().unwrap_or(0);
+            let visible_count = (chunks[2].height / item_height) as usize;
+
+            for (i, video) in self
                 .playlist_videos
                 .iter()
-                .map(|v| {
-                    let channel = v.channel.as_deref().unwrap_or("Unknown");
-                    ListItem::new(format!("{} - {} [{}]", v.title, channel, v.position))
-                })
-                .collect();
+                .enumerate()
+                .skip(offset)
+                .take(visible_count)
+            {
+                let rect = Rect::new(
+                    chunks[2].x,
+                    chunks[2].y + (i - offset) as u16 * item_height,
+                    chunks[2].width,
+                    6,
+                );
+                let channel = video.channel.as_deref().unwrap_or("Unknown");
+                let meta = format!("{} • Position {}", channel, video.position);
+                let is_selected = self.playlist_videos_state.selected() == Some(i);
 
-            let list = List::new(items)
-                .block(
-                    Block::default()
-                        .title(format!(
-                            " Playlist: {} (Enter: Play, d: Download, x: Remove, Esc: Back) ",
-                            playlist_name
-                        ))
-                        .borders(Borders::NONE)
-                        .border_style(self.theme.border),
-                )
-                .highlight_style(
-                    ratatui::style::Style::default()
-                        .fg(self.theme.accent)
-                        .add_modifier(ratatui::style::Modifier::BOLD),
-                )
-                .highlight_symbol(">> ");
+                components::render_item_card(
+                    f,
+                    rect,
+                    &video.title,
+                    &meta,
+                    &self.theme,
+                    is_selected,
+                    false,
+                );
+            }
 
-            f.render_stateful_widget(list, f.area(), &mut self.playlist_videos_state);
+            components::render_info_bar(
+                f,
+                chunks[3],
+                &[
+                    ("Enter", "Play"),
+                    ("d", "Download"),
+                    ("x", "Remove"),
+                    ("Esc", "Back"),
+                ],
+                &self.theme,
+            );
         } else {
-            let items: Vec<ListItem> = self
+            components::render_header(
+                f,
+                chunks[0],
+                "Playlists",
+                &format!("• {} playlists", self.playlist_results.len()),
+                &self.theme,
+            );
+
+            components::render_divider(f, chunks[1], &self.theme, Direction::Horizontal);
+
+            let item_height = 6 + components::DesignTokens::ITEM_GAP;
+            let offset = self.playlist_state.selected().unwrap_or(0);
+            let visible_count = (chunks[2].height / item_height) as usize;
+
+            for (i, playlist) in self
                 .playlist_results
                 .iter()
-                .map(|p| {
-                    let suffix = if p.is_imported { " [Imported]" } else { "" };
-                    ListItem::new(format!("{}{}", p.name, suffix))
-                })
-                .collect();
+                .enumerate()
+                .skip(offset)
+                .take(visible_count)
+            {
+                let rect = Rect::new(
+                    chunks[2].x,
+                    chunks[2].y + (i - offset) as u16 * item_height,
+                    chunks[2].width,
+                    6,
+                );
+                let meta = if playlist.is_imported { "Imported" } else { "" };
+                let is_selected = self.playlist_state.selected() == Some(i);
 
-            let list = List::new(items)
-                .block(
-                    Block::default()
-                                .title(" Playlists (Enter: View, n: New, i: Import, r: Refresh, Shift+D: Delete, Esc: Back) ")
-                                .borders(Borders::NONE)
-                                .border_style(self.theme.border),
-                )
-                .highlight_style(
-                    ratatui::style::Style::default()
-                        .fg(self.theme.accent)
-                        .add_modifier(ratatui::style::Modifier::BOLD),
-                )
-                .highlight_symbol(">> ");
+                components::render_item_card(
+                    f,
+                    rect,
+                    &playlist.name,
+                    meta,
+                    &self.theme,
+                    is_selected,
+                    false,
+                );
+            }
 
-            f.render_stateful_widget(list, f.area(), &mut self.playlist_state);
+            components::render_info_bar(
+                f,
+                chunks[3],
+                &[
+                    ("Enter", "View"),
+                    ("n", "New"),
+                    ("i", "Import"),
+                    ("r", "Refresh"),
+                    ("Shift+D", "Delete"),
+                    ("Esc", "Back"),
+                ],
+                &self.theme,
+            );
         }
     }
 
@@ -1366,7 +1496,13 @@ impl App {
             return;
         }
 
-        let youtube_id = playlist.youtube_id.clone().unwrap();
+        let youtube_id = match playlist.youtube_id.clone() {
+            Some(id) => id,
+            None => {
+                self.set_error("Playlist has no YouTube ID");
+                return;
+            }
+        };
         let playlist_id = playlist.id;
         let api_url = self.settings.api_instance_invidious.clone();
         let tx = self.playlist_tx.clone();

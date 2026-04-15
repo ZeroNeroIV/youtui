@@ -1,29 +1,3 @@
-/*
-AUDIT REPORT: Border Usage in src/ui/
-- src/ui/settings.rs:31 (Settings Title) -> REDUCE
-- src/ui/settings.rs:76 (Settings List) -> REDUCE
-- src/ui/settings.rs:92 (Help Text) -> REMOVE
-- src/ui/components.rs:97 (Error Overlay) -> KEEP
-- src/ui/components.rs:174 (Status Bar) -> REDUCE
-- src/ui/app.rs:401 (Sidebar Menu) -> REDUCE
-- src/ui/app.rs:421 (Videos List) -> REDUCE
-- src/ui/app.rs:437 (Context Menu) -> KEEP
-- src/ui/app.rs:488 (History List) -> REDUCE
-- src/ui/app.rs:518 (Saved List) -> REDUCE
-- src/ui/app.rs:541 (Playlist Prompt) -> REDUCE
-- src/ui/app.rs:572 (Playlist Videos) -> REDUCE
-- src/ui/app.rs:597 (Playlists List) -> REDUCE
-- src/ui/app.rs:621 (Search Input) -> REDUCE
-- src/ui/app.rs:657 (Search Results) -> REDUCE
-
-MODERN/MINIMAL DESIGN RULES:
-1. No `Borders::ALL` on content blocks.
-2. Use `PADDING_MD` for item interiors.
-3. Use `ITEM_GAP` between list items.
-4. Accent color for selection/focus only.
-5. Secondary color for metadata/timestamps.
-*/
-
 pub struct DesignTokens;
 impl DesignTokens {
     pub const PADDING_SM: u16 = 1;
@@ -278,7 +252,7 @@ pub fn render_error(f: &mut Frame, area: Rect, error: &str, suggestion: Option<&
 
     let block = Block::default()
         .title(" Error ")
-        .borders(Borders::ALL)
+        .borders(Borders::NONE)
         .border_style(Style::default().fg(Color::Red));
 
     let paragraph = Paragraph::new(content)
