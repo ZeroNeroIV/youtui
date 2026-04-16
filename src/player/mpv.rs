@@ -1,5 +1,5 @@
 use std::process::Stdio;
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 use tokio::process::Child;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{Mutex, broadcast};
@@ -48,6 +48,7 @@ impl MpvPlayer {
         playback_ended_tx: tokio::sync::mpsc::Sender<()>,
         notification_tx: broadcast::Sender<PlaybackNotification>,
     ) -> Self {
+        info!("Creating MpvPlayer");
         Self {
             inner: std::sync::Arc::new(MpvPlayerInner {
                 process: Mutex::new(None),
@@ -58,14 +59,33 @@ impl MpvPlayer {
     }
 
     pub async fn is_available() -> bool {
+        info!("Detecting media player...");
+        path::print_detection_report();
+        
         if let Some(path) = path::get_player_path("mpv") {
-            tokio::process::Command::new(path)
+            info!("Found mpv at: {:?}", path);
+            let result = tokio::process::Command::new(&path)
                 .arg("--version")
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
-                .spawn()
-                .is_ok()
+                .spawn();
+            
+            match result {
+                Ok(_) => {
+                    info!("mpv is ready");
+                    true
+                }
+                Err(e) => {
+                    warn!("mpv failed to start: {}", e);
+                    false
+                }
+            }
         } else {
+            error!("mpv not found in any location!");
+            info!("Trying to use best available player...");
+            if let Some(player) = path::get_best_player() {
+                info!("Best available player: {} at {:?}", player.name, player.path);
+            }
             false
         }
     }
@@ -90,7 +110,6 @@ impl MpvPlayer {
         if url.is_empty() {
             return Err("Invalid or empty URL passed to play function".to_string());
         }
-        info!("play function received URL: {}", url);
         self.play_with_fallback(url.to_string(), quality, extra_args.iter().map(|s| s.to_string()).collect()).await
     }
 
@@ -118,8 +137,10 @@ impl MpvPlayer {
         let quality_clone = quality.to_string();
 
         tokio::spawn(async move {
+            info!("Starting fallback manager for URL: {}", url_clone);
             let mut rx = inner.notification_tx.subscribe();
             let mut provider_index = 0;
+            let start = std::time::Instant::now();
             
             let providers: Vec<Box<dyn crate::api::providers::StreamProvider>> = vec![
                 Box::new(crate::api::providers::YtdlpProvider),
@@ -131,13 +152,14 @@ impl MpvPlayer {
                 }),
             ];
 
+            info!("Waiting for failure notification...");
+            
             while let Ok(notification) = rx.recv().await {
                 if let PlaybackNotification::Failure(err) = notification {
-                    debug!("Fallback manager detected failure: {}", err);
+                    warn!("Playback failed: {}", err);
 
                     if provider_index >= providers.len() {
-                        info!("All fallback providers exhausted");
-                        let _ = inner.notification_tx.send(PlaybackNotification::Failure("All fallback providers failed".to_string()));
+                        error!("All {} providers exhausted", providers.len());
                         break;
                     }
 
@@ -149,31 +171,42 @@ impl MpvPlayer {
                         _ => "Unknown",
                     };
 
-                    info!("Attempting fallback with provider: {}", provider_name);
+                    info!("Trying provider {} (#{})", provider_name, provider_index + 1);
                     let _ = inner.notification_tx.send(PlaybackNotification::FallbackAttempt(provider_name.to_string()));
 
                     if let Some(video_id) = extract_video_id(&url_clone) {
+                        info!("Extracted video ID: {}", video_id);
                         match provider.get_stream_url(&video_id).await {
                             Ok(stream_url) => {
+                                info!("Got stream URL from {}: {}", provider_name, stream_url);
                                 let args_refs: Vec<&str> = args_clone.iter().map(|s| s.as_str()).collect();
                                 let player = MpvPlayer { inner: inner.clone() };
                                 if let Err(e) = player.run_mpv(&stream_url, &quality_clone, &args_refs, false).await {
-                                    debug!("Fallback run_mpv failed: {}", e);
+                                    error!("Fallback failed: {}", e);
                                 } else {
+                                    info!("SUCCESS - playing with stream URL");
                                     let _ = inner.notification_tx.send(PlaybackNotification::Success(stream_url));
+                                    break;
                                 }
                             }
                             Err(e) => {
-                                debug!("Provider {} failed to get stream URL: {}", provider_name, e);
+                                warn!("Provider {} failed: {}", provider_name, e);
                             }
                         }
                     } else {
-                        debug!("Could not extract video ID from URL: {}", url_clone);
+                        warn!("Could not extract video ID from: {}", url_clone);
                     }
 
                     provider_index += 1;
+                } else if let PlaybackNotification::FallbackAttempt(name) = notification {
+                    info!("Received fallback attempt: {}", name);
+                } else if let PlaybackNotification::Success(url) = notification {
+                    info!("Received success: {}", url);
+                    break;
                 }
             }
+            
+            info!("Fallback manager finished after {:?}", start.elapsed());
         });
 
         Ok(())
@@ -185,11 +218,8 @@ impl MpvPlayer {
         quality: &str,
         extra_args: &[&str],
         loop_playback: bool) -> Result<(), String> {
-        _ = path::get_player_path("mpv")
-            .ok_or_else(|| "mpv binary not found in PATH".to_string())?;
-        self.stop().await; // Ensure process is stopped before starting a new one
         let path = path::get_player_path("mpv")
-            .ok_or_else(|| "mpv binary not found in PATH or common locations".to_string())?;
+            .ok_or_else(|| "mpv binary not found. Run with --detect-players to see available players.".to_string())?;
 
         if !Self::is_available().await {
             return Err("mpv is not installed or not responding".to_string());
@@ -197,15 +227,14 @@ impl MpvPlayer {
 
         self.stop().await;
 
-        let mut cmd = tokio::process::Command::new(path);
+        let mut cmd = tokio::process::Command::new(&path);
 
         if loop_playback {
             cmd.arg("--loop");
         }
 
-        // Add quality setting
         let quality_arg = format!("bestvideo[height<={}]+bestaudio/best[height<={}]", quality, quality);
-        cmd.arg("--ytdl-format").arg(quality_arg);
+        cmd.arg(format!("--ytdl-format={}", quality_arg));
 
         for arg in extra_args {
             cmd.arg(arg);
@@ -215,17 +244,16 @@ impl MpvPlayer {
             return Err("Invalid or empty URL specified for playback".to_string());
         }
 
-        info!("Attempting to play URL: {}", url);
+        info!("Playing URL: {} with {:?}", url, path);
         cmd.arg(url);
         
-        cmd.stdin(Stdio::inherit());
+        cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        // Spawn mpv
         let mut child = cmd
             .spawn()
-            .map_err(|e| format!("Failed to start mpv: {}. Is mpv installed?", e))?;
+            .map_err(|e| format!("Failed to start mpv at {:?}: {}. Is mpv installed?", path, e))?;
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -245,8 +273,8 @@ impl MpvPlayer {
                 let mut reader = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = reader.next_line().await {
                     debug!("[mpv stderr] {}", line);
-                    if line.contains("Failed to open") || line.contains("[ytdl_hook] ERROR") {
-                        info!("Detected playback failure in stderr: {}", line);
+                    if line.contains("Failed to open") || line.contains("[ytdl_hook] ERROR") || line.contains("ERROR") {
+                        warn!("Detected failure in mpv stderr");
                         let _ = inner.notification_tx.send(PlaybackNotification::Failure(line));
                     }
                 }

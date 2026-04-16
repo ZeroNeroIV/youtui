@@ -1,3 +1,18 @@
+/*
+ * UI REDESIGN AUDIT REPORT
+ * -----------------------
+ * Border Usage Audit (src/ui/):
+ * - Borders::ALL: 15 occurrences -> REMOVE
+ * - Block::default().borders(): 4 occurrences -> REDUCE
+ *
+ * MODERN/MINIMAL DESIGN RULES:
+ * 1. No Borders::ALL on content blocks
+ * 2. Use PADDING_MD for item interiors
+ * 3. Use ITEM_GAP between list items
+ * 4. Accent color for selection/focus only
+ * 5. Secondary color for metadata/timestamps
+ */
+
 pub struct DesignTokens;
 impl DesignTokens {
     pub const PADDING_SM: u16 = 1;
@@ -8,6 +23,12 @@ impl DesignTokens {
     pub const TRUNCATE_LEN: usize = 40;
     pub const MIN_TERMINAL_WIDTH: u16 = 80;
     pub const MIN_TERMINAL_HEIGHT: u16 = 20;
+}
+
+/// Represents an item in the sidebar navigation
+pub struct SidebarItem<'a> {
+    pub icon: &'a str,
+    pub label: &'a str,
 }
 
 use crate::ui::theme::Theme;
@@ -115,8 +136,12 @@ pub fn render_item_card(
     is_selected: bool,
     is_focused: bool,
 ) {
-    let title_truncated = if title.len() > DesignTokens::TRUNCATE_LEN {
-        format!("{}...", &title[..DesignTokens::TRUNCATE_LEN - 3])
+    let title_truncated: String = if title.chars().count() > DesignTokens::TRUNCATE_LEN {
+        title
+            .chars()
+            .take(DesignTokens::TRUNCATE_LEN - 3)
+            .collect::<String>()
+            + "..."
     } else {
         title.to_string()
     };
@@ -194,6 +219,86 @@ pub fn render_tab_bar(
         .block(Block::default().padding(Padding::uniform(DesignTokens::PADDING_SM)));
 
     f.render_widget(paragraph, area);
+}
+
+/// Renders a static sidebar with navigation items
+pub fn render_sidebar(
+    f: &mut Frame,
+    area: Rect,
+    items: &[SidebarItem],
+    selected_index: usize,
+    theme: &Theme,
+    is_focused: bool,
+) {
+    let title_height = if is_focused { 3 } else { 0 };
+    if title_height > 0 {
+        let title_area = Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: title_height,
+        };
+        let title = Paragraph::new(Line::from(vec![Span::styled(
+            "Youtui",
+            Style::default().fg(theme.accent).bold(),
+        )]))
+        .block(Block::default().padding(Padding::uniform(DesignTokens::PADDING_SM)));
+        f.render_widget(title, title_area);
+    }
+
+    let item_height = if is_focused { 3 } else { 2 };
+    let mut current_y = area.y + title_height + DesignTokens::ITEM_GAP;
+    for (i, item) in items.iter().enumerate() {
+        if current_y + item_height > area.y + area.height {
+            break;
+        }
+
+        let item_area = Rect {
+            x: area.x,
+            y: current_y,
+            width: area.width,
+            height: item_height,
+        };
+
+        let is_selected = i == selected_index;
+        let style = if is_selected {
+            if is_focused {
+                Style::default().fg(theme.foreground).bg(theme.highlight)
+            } else {
+                Style::default().fg(theme.accent)
+            }
+        } else {
+            Style::default().fg(theme.secondary)
+        };
+
+        let mut borders = Borders::NONE;
+        let mut border_style = Style::default().fg(theme.border);
+        if is_selected {
+            borders = Borders::LEFT;
+            border_style = Style::default().fg(theme.accent);
+        }
+
+        let block = Block::default()
+            .borders(borders)
+            .border_style(border_style)
+            .padding(Padding {
+                left: DesignTokens::PADDING_MD,
+                right: DesignTokens::PADDING_MD,
+                top: 1,
+                bottom: 1,
+            });
+
+        let content = if is_focused {
+            Line::from(vec![Span::raw(format!("{} {}", item.icon, item.label))])
+        } else {
+            Line::from(vec![Span::raw(item.icon)])
+        };
+
+        let paragraph = Paragraph::new(content).block(block).style(style);
+        f.render_widget(paragraph, item_area);
+
+        current_y += item_height + DesignTokens::ITEM_GAP;
+    }
 }
 
 /// Display a modern progress bar

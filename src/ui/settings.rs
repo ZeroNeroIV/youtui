@@ -5,9 +5,7 @@ pub fn render_in_panel(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app:
 }
 
 pub fn render(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App) {
-    use crate::ui::components::{
-        render_divider, render_header, render_info_bar, render_progress_bar, DesignTokens,
-    };
+    use crate::ui::components::{render_divider, render_header, render_info_bar, DesignTokens};
     use ratatui::layout::{Constraint, Direction, Layout};
     use ratatui::style::Style;
     use ratatui::widgets::{Block, Padding, Paragraph};
@@ -101,41 +99,6 @@ pub fn render(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App
             *y += 1;
         };
 
-    let render_volume_row = |f: &mut ratatui::Frame, y: &mut u16, is_selected: bool| {
-        if *y >= total_height {
-            return;
-        }
-
-        let row_area = ratatui::layout::Rect {
-            x: content_area.x,
-            y: content_area.y + *y,
-            width: content_area.width,
-            height: 1,
-        };
-
-        let row_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-            .split(row_area);
-
-        let label_style = if is_selected {
-            Style::default()
-                .fg(secondary_color)
-                .bg(highlight_color)
-                .add_modifier(ratatui::style::Modifier::BOLD)
-        } else {
-            Style::default().fg(secondary_color)
-        };
-        let label_para = Paragraph::new("Volume")
-            .style(label_style)
-            .block(Block::default().padding(Padding::horizontal(DesignTokens::PADDING_MD)));
-
-        f.render_widget(label_para, row_layout[0]);
-        render_progress_bar(f, row_layout[1], 70, 100, &app.theme);
-
-        *y += 1;
-    };
-
     render_section(f, &mut current_y, "Playback");
     render_row(
         f,
@@ -179,7 +142,6 @@ pub fn render(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App
         &app.settings.default_format,
         selected_idx == 4,
     );
-    render_volume_row(f, &mut current_y, selected_idx == 5);
 
     render_section(f, &mut current_y, "General");
     render_row(
@@ -187,14 +149,14 @@ pub fn render(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App
         &mut current_y,
         "Theme",
         &app.settings.theme,
-        selected_idx == 6,
+        selected_idx == 5,
     );
     render_row(
         f,
         &mut current_y,
         "Log Level",
         &app.settings.log_level,
-        selected_idx == 7,
+        selected_idx == 6,
     );
     let download_path = app.settings.download_path.to_string_lossy();
     render_row(
@@ -202,14 +164,14 @@ pub fn render(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App
         &mut current_y,
         "Download Path",
         &download_path,
-        selected_idx == 8,
+        selected_idx == 7,
     );
     render_row(
         f,
         &mut current_y,
         "Player",
         &app.settings.player,
-        selected_idx == 9,
+        selected_idx == 8,
     );
 
     render_section(f, &mut current_y, "API");
@@ -218,14 +180,14 @@ pub fn render(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App
         &mut current_y,
         "Invidious API",
         &app.settings.api_instance_invidious,
-        selected_idx == 10,
+        selected_idx == 9,
     );
     render_row(
         f,
         &mut current_y,
         "Piped API",
         &app.settings.api_instance_piped,
-        selected_idx == 11,
+        selected_idx == 10,
     );
 
     render_info_bar(
@@ -245,7 +207,7 @@ pub fn handle_events(app: &mut App, key: crossterm::event::KeyCode) {
             let i = match app.settings_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        11
+                        10
                     } else {
                         i - 1
                     }
@@ -256,7 +218,7 @@ pub fn handle_events(app: &mut App, key: crossterm::event::KeyCode) {
         }
         crossterm::event::KeyCode::Down => {
             let i = match app.settings_state.selected() {
-                Some(i) => (i + 1) % 12,
+                Some(i) => (i + 1) % 11,
                 None => 0,
             };
             app.settings_state.select(Some(i));
@@ -305,9 +267,6 @@ fn edit_setting(app: &mut App) {
             app.settings.default_format = formats[(current_idx + 1) % formats.len()].to_string();
         }
         5 => {
-            // Volume is not yet in Settings struct, so we do nothing here
-        }
-        6 => {
             let themes = crate::ui::theme::Theme::all_themes();
             let current_idx = themes
                 .iter()
@@ -319,7 +278,7 @@ fn edit_setting(app: &mut App) {
                 app.theme = new_theme;
             }
         }
-        7 => {
+        6 => {
             let levels = ["trace", "debug", "info", "warn", "error"];
             let current_idx = levels
                 .iter()
@@ -328,7 +287,7 @@ fn edit_setting(app: &mut App) {
             app.settings.log_level = levels[(current_idx + 1) % levels.len()].to_string();
             crate::utils::logger::update_log_level(&app.settings.log_level);
         }
-        8 => {
+        7 => {
             if let Some(home) = dirs::home_dir() {
                 let paths = [
                     home.join("Downloads"),
@@ -346,18 +305,18 @@ fn edit_setting(app: &mut App) {
                 app.settings.download_path = paths[(current_idx + 1) % paths.len()].clone();
             }
         }
-        9 => {
-            let players = ["mpv", "vlc", "mplayer"];
+        8 => {
+            let players = ["mpv", "vlc"];
             let current_idx = players
                 .iter()
                 .position(|&p| p == app.settings.player)
                 .unwrap_or(0);
             app.settings.player = players[(current_idx + 1) % players.len()].to_string();
         }
-        10 => {
+        9 => {
             // API instances might need a text input, but for now we keep it simple or leave it
         }
-        11 => {
+        10 => {
             // API instances might need a text input, but for now we keep it simple or leave it
         }
         _ => {}

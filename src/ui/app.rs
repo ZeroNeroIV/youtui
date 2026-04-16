@@ -4,7 +4,7 @@ use crate::ui::components;
 use crate::ui::theme::Theme;
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEventKind,
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -12,7 +12,7 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Style},
     widgets::{Block, Borders, ListState, Padding, Paragraph},
     Terminal,
 };
@@ -86,6 +86,7 @@ pub struct App {
     pub current_error: Option<String>,
     pub current_suggestion: Option<String>,
     pub is_loading: bool,
+    pub is_playing: bool,
     pub loading_message: String,
     pub startup_warnings: Vec<String>,
     pub search_query: String,
@@ -105,7 +106,7 @@ pub struct App {
     pub download_tx: tokio::sync::mpsc::Sender<DownloadProgress>,
     pub download_rx: tokio::sync::mpsc::Receiver<DownloadProgress>,
     pub db: std::sync::Arc<crate::db::connection::Database>,
-    pub player: std::sync::Arc<crate::player::mpv::MpvPlayer>,
+    pub player: std::sync::Arc<dyn crate::player::Player>,
     pub history_results: Vec<crate::db::connection::HistoryEntry>,
     pub history_state: ListState,
     pub saved_results: Vec<crate::db::connection::SavedVideo>,
@@ -117,6 +118,8 @@ pub struct App {
     pub playlist_prompt: String,
     pub playlist_prompt_mode: Option<PlaylistPromptMode>,
     pub pending_playlist_add: Option<(String, String, Option<String>)>,
+    pub playback_ended_rx: tokio::sync::mpsc::Receiver<()>,
+    pub autoplay_enabled: bool,
 }
 
 impl App {
@@ -164,12 +167,12 @@ impl App {
         let (playlist_add_tx, playlist_add_rx) = tokio::sync::mpsc::channel(10);
         let (settings_tx, settings_rx) = tokio::sync::mpsc::channel(10);
         let (download_tx, download_rx) = tokio::sync::mpsc::channel(10);
-        let (playback_ended_tx, _playback_ended_rx) = tokio::sync::mpsc::channel(1);
+        let (playback_ended_tx, playback_ended_rx) = tokio::sync::mpsc::channel(1);
         let (notification_tx, _notification_rx) = tokio::sync::broadcast::channel(16);
 
         Ok(Self {
             mode: AppMode::Main,
-            settings,
+            settings: settings.clone(),
             app_state,
             settings_state,
             theme,
@@ -202,6 +205,7 @@ impl App {
             current_error: None,
             current_suggestion: None,
             is_loading: false,
+        is_playing: false,
             loading_message: String::new(),
             startup_warnings,
             search_query: String::new(),
@@ -219,10 +223,17 @@ impl App {
             settings_tx,
             settings_rx,
             db: std::sync::Arc::new(crate::db::connection::Database::new()?),
-            player: std::sync::Arc::new(crate::player::mpv::MpvPlayer::new(
-                playback_ended_tx,
-                notification_tx,
-            )),
+            player: crate::player::create_player(
+                &settings.player,
+                playback_ended_tx.clone(),
+                notification_tx.clone(),
+            )
+            .unwrap_or_else(|| {
+                std::sync::Arc::new(crate::player::mpv::MpvPlayer::new(
+                    playback_ended_tx,
+                    notification_tx,
+                )) as std::sync::Arc<dyn crate::player::Player>
+            }),
             history_results: Vec::new(),
             history_state: ListState::default(),
             saved_results: Vec::new(),
@@ -236,6 +247,8 @@ impl App {
             pending_playlist_add: None,
             download_tx,
             download_rx,
+            playback_ended_rx,
+            autoplay_enabled: true,
         })
     }
 
@@ -268,6 +281,23 @@ impl App {
     }
 
     fn update(&mut self) {
+        if let Ok(_) = self.playback_ended_rx.try_recv() {
+            self.is_playing = false;
+            if self.autoplay_enabled && self.mode == AppMode::Playlist && !self.playlist_videos.is_empty() {
+                if let Some(current_idx) = self.playlist_videos_state.selected() {
+                    let next_idx = current_idx + 1;
+                    if next_idx < self.playlist_videos.len() {
+                        self.playlist_videos_state.select(Some(next_idx));
+                        let video = self.playlist_videos.get(next_idx).cloned();
+                        if let Some(v) = video {
+                            let v2 = v.clone();
+                            self.play_playlist_video(&v2);
+                        }
+                    }
+                }
+            }
+        }
+
         while let Ok(response) = self.search_rx.try_recv() {
             self.is_searching = false;
             match response {
@@ -390,29 +420,6 @@ impl App {
     }
 
     fn render(&mut self, f: &mut ratatui::Frame) {
-        match self.mode {
-            AppMode::Main => {
-                self.render_main_view(f);
-            }
-            AppMode::Settings => {
-                crate::ui::settings::render(f, self.content_area, self);
-            }
-            AppMode::Search => {
-                self.render_search(f);
-            }
-            AppMode::History => {
-                self.render_history(f);
-            }
-            AppMode::Saved => {
-                self.render_saved(f);
-            }
-            AppMode::Playlist => {
-                self.render_playlist(f);
-            }
-        }
-    }
-
-    fn render_main_view(&mut self, f: &mut ratatui::Frame) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(15), Constraint::Percentage(85)])
@@ -421,25 +428,38 @@ impl App {
         self.sidebar_area = chunks[0];
         self.content_area = chunks[1];
 
-        let item_height = 6 + components::DesignTokens::ITEM_GAP;
-        let sidebar_offset = self.sidebar_state.selected().unwrap_or(0);
-        let sidebar_visible_count = (self.sidebar_area.height / item_height) as usize;
+        let sidebar_items = [
+            components::SidebarItem { icon: "🔍", label: "Search" },
+            components::SidebarItem { icon: "📜", label: "History" },
+            components::SidebarItem { icon: "🔖", label: "Saved" },
+            components::SidebarItem { icon: "📋", label: "Playlists" },
+            components::SidebarItem { icon: "⬇️", label: "Downloads" },
+            components::SidebarItem { icon: "⚙️", label: "Settings" },
+        ];
 
-        for (i, item) in self
-            .sidebar_items
-            .iter()
-            .enumerate()
-            .skip(sidebar_offset)
-            .take(sidebar_visible_count)
-        {
-            let rect = Rect::new(
-                self.sidebar_area.x,
-                self.sidebar_area.y + (i - sidebar_offset) as u16 * item_height,
-                self.sidebar_area.width,
-                6,
-            );
-            let is_selected = self.sidebar_state.selected() == Some(i);
-            components::render_item_card(f, rect, item, "", &self.theme, is_selected, false);
+        components::render_sidebar(
+            f,
+            self.sidebar_area,
+            &sidebar_items,
+            self.sidebar_state.selected().unwrap_or(0),
+            &self.theme,
+            self.active_block == ActiveBlock::Sidebar,
+        );
+
+        match self.mode {
+            AppMode::Main => self.render_main_content(f),
+            AppMode::Settings => crate::ui::settings::render(f, self.content_area, self),
+            AppMode::Search => self.render_search(f, self.content_area),
+            AppMode::History => self.render_history(f, self.content_area),
+            AppMode::Saved => self.render_saved(f, self.content_area),
+            AppMode::Playlist => self.render_playlist(f, self.content_area),
+        }
+    }
+
+    fn render_main_content(&mut self, f: &mut ratatui::Frame) {
+        let mut content_theme = self.theme.clone();
+        if self.active_block == ActiveBlock::Sidebar {
+            content_theme.foreground = self.theme.secondary;
         }
 
         let content_chunks = Layout::default()
@@ -457,16 +477,17 @@ impl App {
             content_chunks[0],
             "Videos",
             &format!("• {} items", self.items.len()),
-            &self.theme,
+            &content_theme,
         );
 
-        components::render_divider(f, content_chunks[1], &self.theme, Direction::Horizontal);
+        components::render_divider(f, content_chunks[1], &content_theme, Direction::Horizontal);
 
+        let item_height = 6 + components::DesignTokens::ITEM_GAP;
         if self.items.is_empty() {
             components::render_empty_state(
                 f,
                 content_chunks[2],
-                &self.theme,
+                &content_theme,
                 "Videos",
                 "No videos available",
                 Some("📺"),
@@ -489,15 +510,15 @@ impl App {
                     6,
                 );
                 let is_selected = self.list_state.selected() == Some(i);
-                components::render_item_card(f, rect, item, "", &self.theme, is_selected, false);
+                components::render_item_card(f, rect, item, "", &content_theme, is_selected, false);
             }
         }
 
         components::render_info_bar(
             f,
             content_chunks[3],
-            &[("Theme", &self.theme.name)],
-            &self.theme,
+            &[("Theme", &content_theme.name)],
+            &content_theme,
         );
 
         if self.show_context_menu {
@@ -523,7 +544,7 @@ impl App {
         }
     }
 
-    fn render_history(&mut self, f: &mut ratatui::Frame) {
+    fn render_history(&mut self, f: &mut ratatui::Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -532,7 +553,7 @@ impl App {
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
-            .split(f.area());
+            .split(area);
 
         components::render_header(
             f,
@@ -590,7 +611,7 @@ impl App {
         components::render_info_bar(f, chunks[3], &[("Theme", &self.theme.name)], &self.theme);
     }
 
-    fn render_saved(&mut self, f: &mut ratatui::Frame) {
+    fn render_saved(&mut self, f: &mut ratatui::Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -599,7 +620,7 @@ impl App {
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
-            .split(f.area());
+            .split(area);
 
         components::render_header(
             f,
@@ -657,7 +678,7 @@ impl App {
         components::render_info_bar(f, chunks[3], &[("Theme", &self.theme.name)], &self.theme);
     }
 
-    fn render_playlist(&mut self, f: &mut ratatui::Frame) {
+    fn render_playlist(&mut self, f: &mut ratatui::Frame, area: Rect) {
         if let Some(prompt_mode) = self.playlist_prompt_mode {
             let title = match prompt_mode {
                 PlaylistPromptMode::New => "Create New Playlist",
@@ -675,7 +696,7 @@ impl App {
                     Constraint::Min(0),
                     Constraint::Length(3),
                 ])
-                .split(f.area());
+                .split(area);
 
             components::render_header(f, chunks[0], title, subtitle, &self.theme);
 
@@ -705,7 +726,7 @@ impl App {
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
-            .split(f.area());
+            .split(area);
 
         if !self.playlist_videos.is_empty() {
             let playlist_name = self
@@ -764,6 +785,7 @@ impl App {
                     ("d", "Download"),
                     ("x", "Remove"),
                     ("Esc", "Back"),
+                    ("Ctrl+Shift+X", if self.autoplay_enabled { "Auto ON" } else { "Auto OFF" }),
                 ],
                 &self.theme,
             );
@@ -825,16 +847,16 @@ impl App {
         }
     }
 
-    fn render_search(&mut self, f: &mut ratatui::Frame) {
+    fn render_search(&mut self, f: &mut ratatui::Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
-                Constraint::Length(3),
+                Constraint::Length(5),
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
-            .split(f.area());
+            .split(area);
 
         let subtitle = if self.search_query.is_empty() {
             "Enter a search term...".to_string()
@@ -844,14 +866,19 @@ impl App {
 
         components::render_header(f, chunks[0], "Search", &subtitle, &self.theme);
 
-        let input = Paragraph::new(self.search_query.as_str())
+        let display_text = if self.search_query.is_empty() {
+            "Type here...".to_string()
+        } else {
+            format!("{}▌", self.search_query)
+        };
+        let input = Paragraph::new(display_text)
             .block(
                 Block::default()
-                    .borders(Borders::BOTTOM)
-                    .border_style(self.theme.border)
-                    .padding(Padding::uniform(components::DesignTokens::PADDING_MD)),
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red))
+                    .padding(Padding::uniform(1)),
             )
-            .style(Style::default().fg(self.theme.foreground));
+            .style(Style::default().fg(Color::Yellow).bg(Color::Blue));
         f.render_widget(input, chunks[1]);
 
         if self.is_searching {
@@ -929,7 +956,11 @@ impl App {
                 Event::Key(key) => match self.mode {
                     AppMode::Main => {
                         if key.code == KeyCode::Char('q') {
+                            let player = self.player.clone();
                             self.should_quit = true;
+                            tokio::spawn(async move {
+                                let _ = player.stop().await;
+                            });
                         } else if key.code == KeyCode::Char('s') {
                             self.mode = AppMode::Search;
                             self.search_query.clear();
@@ -960,18 +991,42 @@ impl App {
                             if self.active_block == ActiveBlock::Sidebar {
                                 if let Some(idx) = self.sidebar_state.selected() {
                                     match self.sidebar_items[idx].as_str() {
-                                        "Search" => self.mode = AppMode::Search,
-                                        "History" => self.mode = AppMode::History,
-                                        "Saved" => self.mode = AppMode::Saved,
-                                        "Playlists" => self.mode = AppMode::Playlist,
+                                        "Search" => {
+                                            self.mode = AppMode::Search;
+                                            self.search_query.clear();
+                                            self.search_results.clear();
+                                            self.search_error = None;
+                                        }
+                                        "History" => {
+                                            self.mode = AppMode::History;
+                                            self.history_results = self.db.get_history(100).unwrap_or_default();
+                                            self.history_state = ListState::default();
+                                            self.history_state.select(Some(0));
+                                        }
+                                        "Saved" => {
+                                            self.mode = AppMode::Saved;
+                                            self.saved_results = self.db.get_saved_videos().unwrap_or_default();
+                                            self.saved_state = ListState::default();
+                                            self.saved_state.select(Some(0));
+                                        }
+                                        "Playlists" => {
+                                            self.mode = AppMode::Playlist;
+                                            self.playlist_results = self.db.get_playlists().unwrap_or_default();
+                                            self.playlist_state = ListState::default();
+                                            self.playlist_state.select(Some(0));
+                                            self.playlist_videos.clear();
+                                            self.playlist_videos_state = ListState::default();
+                                            self.playlist_prompt.clear();
+                                            self.playlist_prompt_mode = None;
+                                        }
                                         "Settings" => self.mode = AppMode::Settings,
                                         _ => {}
                                     }
                                 }
                             } else if self.active_block == ActiveBlock::Content {
                                 if let Some(idx) = self.list_state.selected() {
-                                    if let Some(video_title) = self.items.get(idx) {
-                                        self.play_main_video(video_title);
+                                    if let Some(video_title) = self.items.get(idx).cloned() {
+                                        self.play_main_video(&video_title);
                                     }
                                 }
                             }
@@ -979,6 +1034,13 @@ impl App {
                             self.scroll_up();
                         } else if key.code == KeyCode::Down {
                             self.scroll_down();
+                        } else if key.code == KeyCode::Tab {
+                            // Toggle between Sidebar and Content
+                            if self.active_block == ActiveBlock::Sidebar {
+                                self.active_block = ActiveBlock::Content;
+                            } else {
+                                self.active_block = ActiveBlock::Sidebar;
+                            }
                         }
                     }
                     AppMode::Settings => {
@@ -1021,15 +1083,17 @@ impl App {
                             self.mode = AppMode::Main;
                         }
                         KeyCode::Enter => {
+
                             if !self.search_results.is_empty() {
                                 if let Some(idx) = self.list_state.selected() {
-                                    if let Some(video) = self.search_results.get(idx) {
-                                        self.play_search_video(video);
+                                    if let Some(video) = self.search_results.get(idx).cloned() {
+                                        self.play_search_video(&video);
                                     }
                                 }
                             } else if !self.search_query.is_empty() {
                                 self.trigger_search();
                             }
+
                         }
                         _ => {}
                     },
@@ -1038,8 +1102,9 @@ impl App {
                         KeyCode::Down => self.scroll_history_down(),
                         KeyCode::Enter => {
                             if let Some(idx) = self.history_state.selected() {
-                                if let Some(entry) = self.history_results.get(idx) {
-                                    self.play_history_video(entry);
+                                let entry = self.history_results.get(idx).cloned();
+                                if let Some(e) = entry {
+                                    self.play_history_video(&e);
                                 }
                             }
                         }
@@ -1080,8 +1145,9 @@ impl App {
                         }
                         KeyCode::Enter => {
                             if let Some(idx) = self.saved_state.selected() {
-                                if let Some(video) = self.saved_results.get(idx) {
-                                    self.play_saved_video(video);
+                                let video = self.saved_results.get(idx).cloned();
+                                if let Some(v) = video {
+                                    self.play_saved_video(&v);
                                 }
                             }
                         }
@@ -1131,7 +1197,18 @@ impl App {
                                     self.playlist_prompt_mode = None;
                                     self.playlist_prompt.clear();
                                 }
-                                _ => {}
+                                _ => {
+                                    if key.modifiers.contains(KeyModifiers::SHIFT | KeyModifiers::CONTROL)
+                                        && key.code == KeyCode::Char('X')
+                                    {
+                                        self.autoplay_enabled = !self.autoplay_enabled;
+                                        if !self.autoplay_enabled {
+                                            self.is_playing = false;
+                                        }
+                                    } else {
+                                        let _ = key;
+                                    }
+                                }
                             }
                         } else {
                             match key.code {
@@ -1190,8 +1267,9 @@ impl App {
                                         }
                                     } else if !self.playlist_videos.is_empty() {
                                         if let Some(idx) = self.playlist_videos_state.selected() {
-                                            if let Some(video) = self.playlist_videos.get(idx) {
-                                                self.play_playlist_video(video);
+                                            let video = self.playlist_videos.get(idx).cloned();
+                                            if let Some(v) = video {
+                                                self.play_playlist_video(&v);
                                             }
                                         }
                                     } else if let Some(idx) = self.playlist_state.selected() {
@@ -1289,7 +1367,10 @@ impl App {
         self.history_state.select(Some(i));
     }
 
-    fn play_history_video(&self, entry: &crate::db::connection::HistoryEntry) {
+    fn play_history_video(&mut self, entry: &crate::db::connection::HistoryEntry) {
+        self.is_playing = true;
+        self.loading_message = format!("Playing: {}...", entry.title);
+        
         let player = self.player.clone();
         let db = self.db.clone();
         let url = format!("https://www.youtube.com/watch?v={}", entry.video_id);
@@ -1303,7 +1384,10 @@ impl App {
         });
     }
 
-    fn play_saved_video(&self, video: &crate::db::connection::SavedVideo) {
+    fn play_saved_video(&mut self, video: &crate::db::connection::SavedVideo) {
+        self.is_playing = true;
+        self.loading_message = format!("Playing: {}...", video.title);
+        
         let player = self.player.clone();
         let db = self.db.clone();
         let url = format!("https://www.youtube.com/watch?v={}", video.video_id);
@@ -1317,7 +1401,10 @@ impl App {
         });
     }
 
-    fn play_search_video(&self, video: &crate::api::invidious::Video) {
+    fn play_search_video(&mut self, video: &crate::api::invidious::Video) {
+        self.is_playing = true;
+        self.loading_message = format!("Playing: {}...", video.title);
+        
         let player = self.player.clone();
         let db = self.db.clone();
         let url = format!("https://www.youtube.com/watch?v={}", video.video_id);
@@ -1331,11 +1418,15 @@ impl App {
         });
     }
 
-    fn play_main_video(&self, video_title: &str) {
+    fn play_main_video(&mut self, video_title: &str) {
         let player = self.player.clone();
         let db = self.db.clone();
         let title = video_title.to_string();
         let quality = self.settings.default_quality.clone();
+        
+
+        self.is_playing = true;
+        self.loading_message = format!("Playing: {}...", title);
 
         let (video_id, channel) = match video_title {
             "Video 1: Rust for Beginners" => ("S_S_S_S_S1_", "Rust Lang"),
@@ -1453,15 +1544,54 @@ impl App {
         });
     }
 
-    fn scroll_playlist_videos_up(&mut self) {}
+    fn scroll_playlist_videos_up(&mut self) {
+        let i = match self.playlist_videos_state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.playlist_videos.len().saturating_sub(1)
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.playlist_videos_state.select(Some(i));
+    }
 
-    fn scroll_playlist_up(&mut self) {}
+    fn scroll_playlist_up(&mut self) {
+        let i = match self.playlist_state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.playlist_results.len().saturating_sub(1)
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.playlist_state.select(Some(i));
+    }
 
-    fn scroll_playlist_videos_down(&mut self) {}
+    fn scroll_playlist_videos_down(&mut self) {
+        let i = match self.playlist_videos_state.selected() {
+            Some(i) => (i + 1) % self.playlist_videos.len().max(1),
+            None => 0,
+        };
+        self.playlist_videos_state.select(Some(i));
+    }
 
-    fn scroll_playlist_down(&mut self) {}
+    fn scroll_playlist_down(&mut self) {
+        let i = match self.playlist_state.selected() {
+            Some(i) => (i + 1) % self.playlist_results.len().max(1),
+            None => 0,
+        };
+        self.playlist_state.select(Some(i));
+    }
 
-    fn play_playlist_video(&self, video: &crate::db::connection::PlaylistVideo) {
+    fn play_playlist_video(&mut self, video: &crate::db::connection::PlaylistVideo) {
+        self.is_playing = true;
+        self.loading_message = format!("Playing: {}...", video.title);
+        
         let player = self.player.clone();
         let db = self.db.clone();
         let url = format!("https://www.youtube.com/watch?v={}", video.video_id);

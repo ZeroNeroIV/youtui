@@ -48,25 +48,25 @@ pub fn init_logger(config: LoggerConfig) -> Option<non_blocking::WorkerGuard> {
             .with_writer(non_blocking);
 
         if config.to_terminal {
-            let stdout_layer = fmt::layer()
+            let stderr_layer = fmt::layer()
                 .with_target(true)
                 .with_level(true)
-                .with_writer(std::io::stdout);
+                .with_writer(std::io::stderr);
 
-            registry.with(file_layer).with(stdout_layer).init();
+            registry.with(file_layer).with(stderr_layer).init();
         } else {
             registry.with(file_layer).init();
         }
         return Some(guard);
     }
 
-    if config.to_terminal {
-        let stdout_layer = fmt::layer()
+    if config.to_terminal || config.is_dev {
+        let stderr_layer = fmt::layer()
             .with_target(true)
             .with_level(true)
-            .with_writer(std::io::stdout);
+            .with_writer(std::io::stderr);
 
-        registry.with(stdout_layer).init();
+        registry.with(stderr_layer).init();
     }
     None
 }

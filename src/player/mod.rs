@@ -1,4 +1,6 @@
+pub mod detector;
 pub mod mpv;
+pub mod vlc;
 pub mod path;
 
 use std::sync::Arc;
@@ -18,6 +20,7 @@ pub fn create_player(
 ) -> Option<Arc<dyn Player>> {
     match name.to_lowercase().as_str() {
         "mpv" => Some(Arc::new(mpv::MpvPlayer::new(playback_ended_tx, notification_tx)) as Arc<dyn Player>),
+        "vlc" => Some(Arc::new(vlc::VlcPlayer::new(playback_ended_tx, notification_tx)) as Arc<dyn Player>),
         _ => None,
     }
 }
