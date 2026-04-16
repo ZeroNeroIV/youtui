@@ -1,12 +1,12 @@
 {
-  "active_plan": "/home/zeroneroiv/projects/personal/youtui/.sisyphus/plans/details-panel.md",
-  "started_at": "2026-04-11T08:45:00Z",
+  "active_plan": "/home/zeroneroiv/projects/personal/youtui/.sisyphus/plans/sidebar-focus-mode.md",
+  "started_at": "2026-04-15T19:28:34.588Z",
   "session_ids": [
-    "ses_28a5e50dcffeZ5c9eHKt8VbnsK"
+    "ses_26de00bbdffe9yTBFVlUk6rywF"
   ],
   "session_origins": {
-    "ses_28a5e50dcffeZ5c9eHKt8VbnsK": "direct"
+    "ses_26de00bbdffe9yTBFVlUk6rywF": "direct"
   },
-  "plan_name": "details-panel",
+  "plan_name": "sidebar-focus-mode",
   "agent": "atlas"
 }

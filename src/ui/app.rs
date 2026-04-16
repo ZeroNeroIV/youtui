@@ -1198,16 +1198,7 @@ impl App {
                                     self.playlist_prompt.clear();
                                 }
                                 _ => {
-                                    if key.modifiers.contains(KeyModifiers::SHIFT | KeyModifiers::CONTROL)
-                                        && key.code == KeyCode::Char('X')
-                                    {
-                                        self.autoplay_enabled = !self.autoplay_enabled;
-                                        if !self.autoplay_enabled {
-                                            self.is_playing = false;
-                                        }
-                                    } else {
-                                        let _ = key;
-                                    }
+                                    let _ = key;
                                 }
                             }
                         } else {
@@ -1298,6 +1289,14 @@ impl App {
                                 }
 
                                 KeyCode::Char('d') => self.handle_download_shortcut(),
+                                _ if key.modifiers.contains(KeyModifiers::SHIFT | KeyModifiers::CONTROL)
+                                    && key.code == KeyCode::Char('X') =>
+                                {
+                                    self.autoplay_enabled = !self.autoplay_enabled;
+                                    if !self.autoplay_enabled {
+                                        self.is_playing = false;
+                                    }
+                                }
                                 KeyCode::Char('x') => {
                                     if !self.playlist_videos.is_empty() {
                                         if let Some(idx) = self.playlist_videos_state.selected() {
