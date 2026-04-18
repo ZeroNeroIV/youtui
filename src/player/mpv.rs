@@ -1,4 +1,5 @@
 use std::process::Stdio;
+use std::os::unix::net::UnixStream;
 use tracing::{debug, error, info, warn};
 use tokio::process::Child;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -17,6 +18,8 @@ pub struct MpvPlayerInner {
     process: Mutex<Option<Child>>,
     playback_ended_tx: tokio::sync::mpsc::Sender<()>,
     notification_tx: broadcast::Sender<PlaybackNotification>,
+    queue: Mutex<Vec<String>>,
+    socket_path: Mutex<Option<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +44,10 @@ impl crate::player::Player for MpvPlayer {
     async fn is_playing(&self) -> bool {
         self.is_playing().await
     }
+
+    async fn queue_video(&self, url: &str) -> Result<(), String> {
+        self.queue_video(url).await
+    }
 }
 
 impl MpvPlayer {
@@ -54,6 +61,8 @@ impl MpvPlayer {
                 process: Mutex::new(None),
                 playback_ended_tx,
                 notification_tx,
+                queue: Mutex::new(Vec::new()),
+                socket_path: Mutex::new(None),
             }),
         }
     }
@@ -300,6 +309,7 @@ impl MpvPlayer {
         drop(process);
 
         let inner = self.inner.clone();
+        let player = MpvPlayer { inner: inner.clone() };
         let tx = self.inner.playback_ended_tx.clone();
         tokio::spawn(async move {
             loop {
@@ -308,11 +318,9 @@ impl MpvPlayer {
                     if let Some(child) = process.as_mut() {
                         match child.try_wait() {
                             Ok(Some(status)) => {
-                            // Exit code 2 is normal for mpv when playback completes (e.g., end of playlist)
-                            // Treat it the same as other exit codes - send playback_ended signal
                             *process = None;
                             if status.code() == Some(2) {
-                                debug!("mpv exited with code 2 (playback completed normally)");
+                                debug!("mpv exited with code 2 (playback completed)");
                             }
                             let _ = tx.send(()).await;
                             break;
@@ -353,6 +361,13 @@ impl MpvPlayer {
         } else {
             false
         }
+    }
+
+    pub async fn queue_video(&self, url: &str) -> Result<(), String> {
+        info!("Queuing video for continuous playback: {}", url);
+        let mut queue = self.inner.queue.lock().await;
+        queue.push(url.to_string());
+        Ok(())
     }
 }
 

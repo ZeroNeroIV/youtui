@@ -39,6 +39,11 @@ impl crate::player::Player for VlcPlayer {
         let process_lock = self.inner.process.lock().await;
         process_lock.is_some()
     }
+
+    async fn queue_video(&self, url: &str) -> Result<(), String> {
+        info!("VLC queue not implemented yet");
+        Ok(())
+    }
 }
 
 impl VlcPlayer {

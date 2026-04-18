@@ -292,9 +292,6 @@ impl App {
         if self.playback_ended_rx.try_recv().is_ok() {
             if self.is_playing {
                 self.is_playing = false;
-                if self.autoplay_enabled {
-                    self.play_next_video();
-                }
             }
         }
 
@@ -1453,6 +1450,14 @@ impl App {
         if let Some(idx) = self.history_state.selected() {
             self.last_played_category = Some("history".to_string());
             self.last_played_index = Some(idx);
+            if idx + 1 < self.history_results.len() {
+                let next_entry = &self.history_results[idx + 1];
+                let next_url = format!("https://www.youtube.com/watch?v={}", next_entry.video_id);
+                let player = self.player.clone();
+                tokio::spawn(async move {
+                    let _ = player.queue_video(&next_url).await;
+                });
+            }
         }
         
         let player = self.player.clone();
@@ -1477,6 +1482,14 @@ impl App {
         if let Some(idx) = self.saved_state.selected() {
             self.last_played_category = Some("saved".to_string());
             self.last_played_index = Some(idx);
+            if idx + 1 < self.saved_results.len() {
+                let next_video = &self.saved_results[idx + 1];
+                let next_url = format!("https://www.youtube.com/watch?v={}", next_video.video_id);
+                let player = self.player.clone();
+                tokio::spawn(async move {
+                    let _ = player.queue_video(&next_url).await;
+                });
+            }
         }
         
         let player = self.player.clone();
@@ -1501,12 +1514,20 @@ impl App {
         if let Some(idx) = self.list_state.selected() {
             self.last_played_category = Some("search".to_string());
             self.last_played_index = Some(idx);
+            if idx + 1 < self.search_results.len() {
+                let next_video = &self.search_results[idx + 1];
+                let next_url = format!("https://www.youtube.com/watch?v={}", next_video.video_id);
+                let player = self.player.clone();
+                tokio::spawn(async move {
+                    let _ = player.queue_video(&next_url).await;
+                });
+            }
         }
         
         let player = self.player.clone();
         let db = self.db.clone();
         let url = format!("https://www.youtube.com/watch?v={}", video.video_id);
-let video_id = video.video_id.clone();
+        let video_id = video.video_id.clone();
         let title = video.title.clone();
         let channel = video.author.clone();
         let quality = self.settings.default_quality.clone();
@@ -1529,6 +1550,25 @@ let video_id = video.video_id.clone();
         if let Some(idx) = self.list_state.selected() {
             self.last_played_category = Some("main".to_string());
             self.last_played_index = Some(idx);
+            if idx + 1 < self.items.len() {
+                let next_title = &self.items[idx + 1];
+                let next_id = match next_title.as_str() {
+                    "Video 1: Rust for Beginners" => "S_S_S_S_S1_",
+                    "Video 2: Advanced Ratatui Patterns" => "S_S_S_S_S2_",
+                    "Video 3: Async Programming in Rust" => "S_S_S_S_S3_",
+                    "Video 4: Building a TUI with Mouse Support" => "S_S_S_S_S4_",
+                    "Video 5: YouTube API Integration" => "S_S_S_S_S5_",
+                    "Video 6: SQLite Persistence" => "S_S_S_S_S6_",
+                    "Video 7: Theme Systems in TUIs" => "S_S_S_S_S7_",
+                    "Video 8: Error Handling Best Practices" => "S_S_S_S_S8_",
+                    _ => "dQw4w9WgXcQ",
+                };
+                let next_url = format!("https://www.youtube.com/watch?v={}", next_id);
+                let player = self.player.clone();
+                tokio::spawn(async move {
+                    let _ = player.queue_video(&next_url).await;
+                });
+            }
         }
 
         self.is_playing = true;
@@ -1701,6 +1741,14 @@ let video_id = video.video_id.clone();
         if let Some(idx) = self.playlist_videos_state.selected() {
             self.last_played_category = Some("playlist".to_string());
             self.last_played_index = Some(idx);
+            if idx + 1 < self.playlist_videos.len() {
+                let next_video = &self.playlist_videos[idx + 1];
+                let next_url = format!("https://www.youtube.com/watch?v={}", next_video.video_id);
+                let player = self.player.clone();
+                tokio::spawn(async move {
+                    let _ = player.queue_video(&next_url).await;
+                });
+            }
         }
         
         let player = self.player.clone();
