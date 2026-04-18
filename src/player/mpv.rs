@@ -1,5 +1,4 @@
 use std::process::Stdio;
-use std::os::unix::net::UnixStream;
 use tracing::{debug, error, info, warn};
 use tokio::process::Child;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -20,6 +19,9 @@ pub struct MpvPlayerInner {
     notification_tx: broadcast::Sender<PlaybackNotification>,
     queue: Mutex<Vec<String>>,
     socket_path: Mutex<Option<String>>,
+    quality: Mutex<String>,
+    format: Mutex<String>,
+    loop_playback: Mutex<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,9 @@ impl MpvPlayer {
                 notification_tx,
                 queue: Mutex::new(Vec::new()),
                 socket_path: Mutex::new(None),
+                quality: Mutex::new("1080p".to_string()),
+                format: Mutex::new("video".to_string()),
+                loop_playback: Mutex::new(false),
             }),
         }
     }
@@ -119,6 +124,20 @@ impl MpvPlayer {
         if url.is_empty() {
             return Err("Invalid or empty URL passed to play function".to_string());
         }
+
+        {
+            let mut q = self.inner.quality.lock().await;
+            *q = quality.to_string();
+        }
+        {
+            let mut f = self.inner.format.lock().await;
+            *f = format.to_string();
+        }
+        {
+            let mut l = self.inner.loop_playback.lock().await;
+            *l = loop_playback;
+        }
+
         self.play_with_fallback(url.to_string(), quality, format, loop_playback, extra_args.iter().map(|s| s.to_string()).collect()).await
     }
 
@@ -224,6 +243,95 @@ impl MpvPlayer {
         Ok(())
     }
 
+    async fn run_mpv_internal(
+        inner: &std::sync::Arc<MpvPlayerInner>,
+        url: &str,
+        quality: &str,
+        format: &str,
+        loop_playback: bool,
+        extra_args: &[&str],
+        playback_ended_tx: tokio::sync::mpsc::Sender<()>,
+        notification_tx: broadcast::Sender<PlaybackNotification>,
+    ) -> Result<(), String> {
+        let path = path::get_player_path("mpv")
+            .ok_or_else(|| "mpv binary not found. Run with --detect-players to see available players.".to_string())?;
+
+        {
+            let mut process = inner.process.lock().await;
+            if let Some(mut child) = process.take() {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+            }
+        }
+
+        let mut cmd = tokio::process::Command::new(&path);
+
+        cmd.arg("--keep-open=no");
+        
+        if loop_playback {
+            cmd.arg("--loop");
+        }
+
+        let quality_arg = if format == "mp3" {
+            "bestaudio/best".to_string()
+        } else {
+            format!("bestvideo[height<={}]+bestaudio/best[height<={}]", quality, quality)
+        };
+        cmd.arg(format!("--ytdl-format={}", quality_arg));
+
+        for arg in extra_args {
+            cmd.arg(arg);
+        }
+
+        if url.is_empty() {
+            return Err("Invalid or empty URL specified for playback".to_string());
+        }
+
+        info!("Playing URL: {} with {:?}", url, path);
+        cmd.arg(url);
+        
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to start mpv at {:?}: {}. Is mpv installed?", path, e))?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        if let Some(stdout) = stdout {
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    debug!("[mpv stdout] {}", line);
+                }
+            });
+        }
+
+        if let Some(stderr) = stderr {
+            let inner = inner.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    debug!("[mpv stderr] {}", line);
+                    if line.contains("Failed to open") || line.contains("[ytdl_hook] ERROR") || line.contains("ERROR") {
+                        warn!("Detected failure in mpv stderr");
+                        let _ = inner.notification_tx.send(PlaybackNotification::Failure(line));
+                    }
+                }
+            });
+        }
+
+        {
+            let mut process = inner.process.lock().await;
+            *process = Some(child);
+        }
+
+        Ok(())
+    }
+
     async fn run_mpv(
         &self,
         url: &str,
@@ -233,10 +341,6 @@ impl MpvPlayer {
         extra_args: &[&str]) -> Result<(), String> {
         let path = path::get_player_path("mpv")
             .ok_or_else(|| "mpv binary not found. Run with --detect-players to see available players.".to_string())?;
-
-        if !Self::is_available().await {
-            return Err("mpv is not installed or not responding".to_string());
-        }
 
         self.stop().await;
 
@@ -309,7 +413,6 @@ impl MpvPlayer {
         drop(process);
 
         let inner = self.inner.clone();
-        let player = MpvPlayer { inner: inner.clone() };
         let tx = self.inner.playback_ended_tx.clone();
         tokio::spawn(async move {
             loop {
@@ -321,6 +424,20 @@ impl MpvPlayer {
                             *process = None;
                             if status.code() == Some(2) {
                                 debug!("mpv exited with code 2 (playback completed)");
+                            }
+                            let mut queue = inner.queue.lock().await;
+                            if !queue.is_empty() {
+                                let next_url = queue.remove(0);
+                                drop(queue);
+                                let quality = inner.quality.lock().await.clone();
+                                let format = inner.format.lock().await.clone();
+                                let loop_playback = *inner.loop_playback.lock().await;
+                                let inner_clone = inner.clone();
+                                debug!("Playing next video from queue: {}", next_url);
+                                tokio::spawn(async move {
+                                    let _ = Self::run_mpv_internal(&inner_clone, &next_url, &quality, &format, loop_playback, &[], inner_clone.playback_ended_tx.clone(), inner_clone.notification_tx.clone()).await;
+                                });
+                                continue;
                             }
                             let _ = tx.send(()).await;
                             break;
