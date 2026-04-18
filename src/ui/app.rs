@@ -1462,10 +1462,11 @@ impl App {
         let title = entry.title.clone();
         let channel = entry.channel.clone();
         let quality = self.settings.default_quality.clone();
+        let format = self.settings.default_format.clone();
         let loop_playback = self.settings.loop_playback;
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, loop_playback, &[]).await;
+            let _ = player.play(&url, &quality, &format, loop_playback, &[]).await;
         });
     }
 
@@ -1485,10 +1486,11 @@ impl App {
         let title = video.title.clone();
         let channel = video.channel.clone();
         let quality = self.settings.default_quality.clone();
+        let format = self.settings.default_format.clone();
         let loop_playback = self.settings.loop_playback;
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, loop_playback, &[]).await;
+            let _ = player.play(&url, &quality, &format, loop_playback, &[]).await;
         });
     }
 
@@ -1504,14 +1506,15 @@ impl App {
         let player = self.player.clone();
         let db = self.db.clone();
         let url = format!("https://www.youtube.com/watch?v={}", video.video_id);
-        let video_id = video.video_id.clone();
+let video_id = video.video_id.clone();
         let title = video.title.clone();
         let channel = video.author.clone();
         let quality = self.settings.default_quality.clone();
+        let format = self.settings.default_format.clone();
         let loop_playback = self.settings.loop_playback;
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, loop_playback, &[]).await;
+            let _ = player.play(&url, &quality, &format, loop_playback, &[]).await;
         });
     }
 
@@ -1520,6 +1523,7 @@ impl App {
         let db = self.db.clone();
         let title = video_title.to_string();
         let quality = self.settings.default_quality.clone();
+        let format = self.settings.default_format.clone();
         let loop_playback = self.settings.loop_playback;
         
         if let Some(idx) = self.list_state.selected() {
@@ -1548,7 +1552,7 @@ impl App {
 
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, loop_playback, &[]).await;
+            let _ = player.play(&url, &quality, &format, loop_playback, &[]).await;
         });
     }
 
@@ -1706,10 +1710,11 @@ impl App {
         let title = video.title.clone();
         let channel = video.channel.clone();
         let quality = self.settings.default_quality.clone();
+        let format = self.settings.default_format.clone();
         let loop_playback = self.settings.loop_playback;
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, loop_playback, &[]).await;
+            let _ = player.play(&url, &quality, &format, loop_playback, &[]).await;
         });
     }
 

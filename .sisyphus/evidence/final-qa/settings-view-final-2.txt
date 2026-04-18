@@ -1,0 +1,24 @@
+
+
+
+
+
+                ────────────────────────────────────────────────────────────────
+                  Loop Playback             Off
+                  Auto Play                 On
+                  Instance Mode             Single
+                  Quality                   720
+                  Format                    mp4
+                  Volume                  █████████████████70% ██████
+
+
+                ────────────────────────────────────────────────────────────────
+                  Theme                     dark
+                  Log Level                 info
+                  Download Path             /home/zeroneroiv/Videos
+                  Player                    mplayer
+
+
+                ────────────────────────────────────────────────────────────────
+
+

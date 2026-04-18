@@ -26,8 +26,8 @@ pub struct MpvPlayer {
 
 #[async_trait::async_trait]
 impl crate::player::Player for MpvPlayer {
-    async fn play(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
-        self.play(url, quality, loop_playback, extra_args).await
+    async fn play(&self, url: &str, quality: &str, format: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
+        self.play(url, quality, format, loop_playback, extra_args).await
     }
 
     async fn play_audio(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
@@ -106,11 +106,11 @@ impl MpvPlayer {
         }
     }
 
-    pub async fn play(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
+    pub async fn play(&self, url: &str, quality: &str, format: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
         if url.is_empty() {
             return Err("Invalid or empty URL passed to play function".to_string());
         }
-        self.play_with_fallback(url.to_string(), quality, loop_playback, extra_args.iter().map(|s| s.to_string()).collect()).await
+        self.play_with_fallback(url.to_string(), quality, format, loop_playback, extra_args.iter().map(|s| s.to_string()).collect()).await
     }
 
     pub async fn play_audio(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
@@ -119,23 +119,25 @@ impl MpvPlayer {
             return Err("Invalid or empty URL passed to play_audio function".to_string());
         }
         info!("play_audio function received URL: {}", url);
-        self.play_with_fallback(url.to_string(), quality, loop_playback, args).await
+        self.play_with_fallback(url.to_string(), quality, "mp3", loop_playback, args).await
     }
 
     pub async fn play_with_fallback(
         &self,
         url: String,
         quality: &str,
+        format: &str,
         loop_playback: bool,
         extra_args: Vec<String>,
     ) -> Result<(), String> {
         let args_refs: Vec<&str> = extra_args.iter().map(|s| s.as_str()).collect();
-        self.run_mpv(&url, quality, loop_playback, &args_refs).await?;
+        self.run_mpv(&url, quality, format, loop_playback, &args_refs).await?;
 
         let inner = self.inner.clone();
         let url_clone = url.clone();
         let args_clone = extra_args.clone();
         let quality_clone = quality.to_string();
+        let format_clone = format.to_string();
 
         tokio::spawn(async move {
             info!("Starting fallback manager for URL: {}", url_clone);
@@ -182,7 +184,7 @@ impl MpvPlayer {
                                 info!("Got stream URL from {}: {}", provider_name, stream_url);
                                 let args_refs: Vec<&str> = args_clone.iter().map(|s| s.as_str()).collect();
                                 let player = MpvPlayer { inner: inner.clone() };
-                                if let Err(e) = player.run_mpv(&stream_url, &quality_clone, loop_playback, &args_refs).await {
+                                if let Err(e) = player.run_mpv(&stream_url, &quality_clone, &format_clone, loop_playback, &args_refs).await {
                                     error!("Fallback failed: {}", e);
                                 } else {
                                     info!("SUCCESS - playing with stream URL");
@@ -217,6 +219,7 @@ impl MpvPlayer {
         &self,
         url: &str,
         quality: &str,
+        format: &str,
         loop_playback: bool,
         extra_args: &[&str]) -> Result<(), String> {
         let path = path::get_player_path("mpv")
@@ -238,7 +241,13 @@ impl MpvPlayer {
             cmd.arg("--loop");
         }
 
-        let quality_arg = format!("bestvideo[height<={}]+bestaudio/best[height<={}]", quality, quality);
+        // Build yt-dlp format based on format setting
+        let quality_arg = if format == "mp3" {
+            // Extract audio only for mp3
+            "bestaudio/best".to_string()
+        } else {
+            format!("bestvideo[height<={}]+bestaudio/best[height<={}]", quality, quality)
+        };
         cmd.arg(format!("--ytdl-format={}", quality_arg));
 
         for arg in extra_args {

@@ -1,0 +1,24 @@
+Menu            Videos
+  Search        >> Video 1: Rust for Beginners
+  History          Video 2: Advanced Ratatui Patterns
+  Saved            Video 3: Async Programming in Rust
+  Playlists        Video 4: Building a TUI with Mouse Support
+> Downloads        Video 5: YouTube API Integration
+  Settings         Video 6: SQLite Persistence
+                   Video 7: Theme Systems in TUIs
+                   Video 8: Error Handling Best Practices
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

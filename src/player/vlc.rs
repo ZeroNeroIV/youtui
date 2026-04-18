@@ -20,7 +20,7 @@ pub struct VlcPlayer {
 
 #[async_trait::async_trait]
 impl crate::player::Player for VlcPlayer {
-    async fn play(&self, url: &str, _quality: &str, _loop_playback: bool, _extra_args: &[&str]) -> Result<(), String> {
+    async fn play(&self, url: &str, _quality: &str, _format: &str, _loop_playback: bool, _extra_args: &[&str]) -> Result<(), String> {
         self.play_vlc(url).await
     }
 

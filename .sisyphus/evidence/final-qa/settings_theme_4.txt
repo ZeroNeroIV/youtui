@@ -1,0 +1,24 @@
+display a backtrace
+                   [ble: EOF]
+[ble: exit 101]
+󰪢 52s 󰉋 → .../youtui 󰜥 󰘬 main
+   
+ 󰉋 → .../youtui 󰜥 󰘬 main
+   
+ 󰉋 → .../youtui 󰜥 󰘬 main
+   
+ 󰉋 → .../youtui 󰜥 󰘬 main
+    EscEscEscEscEscsEscEschEscEscvEscEscpEscEsc
+                                                 -bash: EscEscEscEscEscsEscEschE
+scEscvEscEscpEscEsc: command not found
+                                      [ble: EOF]
+[ble: exit 127]
+󰪢 0s 󰉋 → .../youtui 󰜥 󰘬 main
+    EscEscEscEscEscsEscEschEscEscvEscEscpEscEsc
+                                                 -bash: EscEscEscEscEscsEscEschE
+scEscvEscEscpEscEsc: command not found
+                                      [ble: EOF]
+[ble: exit 127]
+󰪢 0s 󰉋 → .../youtui 󰜥 󰘬 main
+    EscEscEscEscEscsEscEschEscEscvEscEscpEscEsc
+

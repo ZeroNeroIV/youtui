@@ -1,0 +1,24 @@
+
+
+
+
+
+
+
+
+thread 'main' (3614642) panicked at src/ui/components.rs:145:32:
+                                                                byte index 37 is
+ not a char boundary; it is inside '🩹' (bytes 36..40) of `so, my 👁️ are correct
+ ❤️‍🩹 #funny #spongebob`
+                      note: run with `RUST_BACKTRACE=1` environment variable to
+display a backtrace
+                   [ble: EOF]
+[ble: exit 101]
+󰪢 52s 󰉋 → .../youtui 󰜥 󰘬 main
+   
+ 󰉋 → .../youtui 󰜥 󰘬 main
+   
+ 󰉋 → .../youtui 󰜥 󰘬 main
+   
+ 󰉋 → .../youtui 󰜥 󰘬 main
+    EscEscEscEscEscsEscEschEscEscvEscEscpEscEsc

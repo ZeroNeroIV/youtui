@@ -1,0 +1,1 @@
+Verified: App launched and navigated through all views at 80x20 resolution without panics or layout collapses.

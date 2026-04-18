@@ -1,0 +1,1 @@
+Verified: Cycled through all 6 themes (terminal, tokyo_night, monokai_pro, nord, catppuccin_mocha, gruvbox) across all views without crashes.
