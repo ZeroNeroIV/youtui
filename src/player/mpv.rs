@@ -26,12 +26,12 @@ pub struct MpvPlayer {
 
 #[async_trait::async_trait]
 impl crate::player::Player for MpvPlayer {
-    async fn play(&self, url: &str, quality: &str, extra_args: &[&str]) -> Result<(), String> {
-        self.play(url, quality, extra_args).await
+    async fn play(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
+        self.play(url, quality, loop_playback, extra_args).await
     }
 
-    async fn play_audio(&self, url: &str, quality: &str, extra_args: &[&str]) -> Result<(), String> {
-        self.play_audio(url, quality, extra_args).await
+    async fn play_audio(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
+        self.play_audio(url, quality, loop_playback, extra_args).await
     }
 
     async fn stop(&self) {
@@ -106,30 +106,31 @@ impl MpvPlayer {
         }
     }
 
-    pub async fn play(&self, url: &str, quality: &str, extra_args: &[&str]) -> Result<(), String> {
+    pub async fn play(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
         if url.is_empty() {
             return Err("Invalid or empty URL passed to play function".to_string());
         }
-        self.play_with_fallback(url.to_string(), quality, extra_args.iter().map(|s| s.to_string()).collect()).await
+        self.play_with_fallback(url.to_string(), quality, loop_playback, extra_args.iter().map(|s| s.to_string()).collect()).await
     }
 
-    pub async fn play_audio(&self, url: &str, quality: &str, extra_args: &[&str]) -> Result<(), String> {
+    pub async fn play_audio(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String> {
         let args: Vec<String> = extra_args.iter().copied().chain(std::iter::once("--video=no")).map(|s| s.to_string()).collect();
         if url.is_empty() {
             return Err("Invalid or empty URL passed to play_audio function".to_string());
         }
         info!("play_audio function received URL: {}", url);
-        self.play_with_fallback(url.to_string(), quality, args).await
+        self.play_with_fallback(url.to_string(), quality, loop_playback, args).await
     }
 
     pub async fn play_with_fallback(
         &self,
         url: String,
         quality: &str,
+        loop_playback: bool,
         extra_args: Vec<String>,
     ) -> Result<(), String> {
         let args_refs: Vec<&str> = extra_args.iter().map(|s| s.as_str()).collect();
-        self.run_mpv(&url, quality, &args_refs, false).await?;
+        self.run_mpv(&url, quality, loop_playback, &args_refs).await?;
 
         let inner = self.inner.clone();
         let url_clone = url.clone();
@@ -181,7 +182,7 @@ impl MpvPlayer {
                                 info!("Got stream URL from {}: {}", provider_name, stream_url);
                                 let args_refs: Vec<&str> = args_clone.iter().map(|s| s.as_str()).collect();
                                 let player = MpvPlayer { inner: inner.clone() };
-                                if let Err(e) = player.run_mpv(&stream_url, &quality_clone, &args_refs, false).await {
+                                if let Err(e) = player.run_mpv(&stream_url, &quality_clone, loop_playback, &args_refs).await {
                                     error!("Fallback failed: {}", e);
                                 } else {
                                     info!("SUCCESS - playing with stream URL");
@@ -216,8 +217,8 @@ impl MpvPlayer {
         &self,
         url: &str,
         quality: &str,
-        extra_args: &[&str],
-        loop_playback: bool) -> Result<(), String> {
+        loop_playback: bool,
+        extra_args: &[&str]) -> Result<(), String> {
         let path = path::get_player_path("mpv")
             .ok_or_else(|| "mpv binary not found. Run with --detect-players to see available players.".to_string())?;
 
@@ -229,6 +230,10 @@ impl MpvPlayer {
 
         let mut cmd = tokio::process::Command::new(&path);
 
+        // Exit immediately when video ends (don't wait for user input)
+        // Use --keep-open=no instead of --quit-after-end for better compatibility
+        cmd.arg("--keep-open=no");
+        
         if loop_playback {
             cmd.arg("--loop");
         }
@@ -294,14 +299,15 @@ impl MpvPlayer {
                     if let Some(child) = process.as_mut() {
                         match child.try_wait() {
                             Ok(Some(status)) => {
-                                if status.code() == Some(2) {
-                                    info!("mpv exited with code 2 - playback failure");
-                                    let _ = inner.notification_tx.send(PlaybackNotification::Failure("mpv exited with code 2".to_string()));
-                                }
-                                *process = None;
-                                let _ = tx.send(()).await;
-                                break;
+                            // Exit code 2 is normal for mpv when playback completes (e.g., end of playlist)
+                            // Treat it the same as other exit codes - send playback_ended signal
+                            *process = None;
+                            if status.code() == Some(2) {
+                                debug!("mpv exited with code 2 (playback completed normally)");
                             }
+                            let _ = tx.send(()).await;
+                            break;
+                        }
                             Ok(None) => {}
                             Err(e) => {
                                 debug!("Error waiting for mpv: {}", e);

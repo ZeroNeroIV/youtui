@@ -20,11 +20,11 @@ pub struct VlcPlayer {
 
 #[async_trait::async_trait]
 impl crate::player::Player for VlcPlayer {
-    async fn play(&self, url: &str, _quality: &str, _extra_args: &[&str]) -> Result<(), String> {
+    async fn play(&self, url: &str, _quality: &str, _loop_playback: bool, _extra_args: &[&str]) -> Result<(), String> {
         self.play_vlc(url).await
     }
 
-    async fn play_audio(&self, url: &str, _quality: &str, _extra_args: &[&str]) -> Result<(), String> {
+    async fn play_audio(&self, url: &str, _quality: &str, _loop_playback: bool, _extra_args: &[&str]) -> Result<(), String> {
         self.play_vlc(url).await
     }
 
@@ -112,6 +112,7 @@ impl VlcPlayer {
         };
 
         let mut cmd = tokio::process::Command::new(&path);
+        cmd.arg("--play-and-exit");
         cmd.arg("--no-video-title-show");
         cmd.arg(&resolved_url);
         cmd.stdin(Stdio::null());
@@ -125,7 +126,7 @@ impl VlcPlayer {
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
-        let _playback_ended_tx = self.inner.playback_ended_tx.clone();
+        let playback_ended_tx = self.inner.playback_ended_tx.clone();
         let notification_tx = self.inner.notification_tx.clone();
 
         tokio::spawn(async move {
@@ -144,6 +145,31 @@ impl VlcPlayer {
                         let _ = notification_tx.send(crate::player::mpv::PlaybackNotification::Failure(line));
                     }
                 }
+            }
+        });
+
+        let inner = self.inner.clone();
+        let tx = playback_ended_tx.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Some(ref mut child) = *inner.process.lock().await {
+                    match child.try_wait() {
+                        Ok(Some(status)) => {
+                            info!("vlc exited with code {:?} - playback ended", status.code());
+                            let _ = tx.send(()).await;
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            debug!("Error waiting for vlc: {}", e);
+                            let _ = tx.send(()).await;
+                            break;
+                        }
+                    }
+                } else {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             }
         });
 

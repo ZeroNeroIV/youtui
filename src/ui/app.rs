@@ -119,7 +119,11 @@ pub struct App {
     pub playlist_prompt_mode: Option<PlaylistPromptMode>,
     pub pending_playlist_add: Option<(String, String, Option<String>)>,
     pub playback_ended_rx: tokio::sync::mpsc::Receiver<()>,
+    pub playback_ended_tx: tokio::sync::mpsc::Sender<()>,
+    pub notification_tx: tokio::sync::broadcast::Sender<crate::player::mpv::PlaybackNotification>,
     pub autoplay_enabled: bool,
+    pub last_played_category: Option<String>,
+    pub last_played_index: Option<usize>,
 }
 
 impl App {
@@ -230,8 +234,8 @@ impl App {
             )
             .unwrap_or_else(|| {
                 std::sync::Arc::new(crate::player::mpv::MpvPlayer::new(
-                    playback_ended_tx,
-                    notification_tx,
+                    playback_ended_tx.clone(),
+                    notification_tx.clone(),
                 )) as std::sync::Arc<dyn crate::player::Player>
             }),
             history_results: Vec::new(),
@@ -248,7 +252,11 @@ impl App {
             download_tx,
             download_rx,
             playback_ended_rx,
-            autoplay_enabled: true,
+            playback_ended_tx,
+            notification_tx,
+            autoplay_enabled: settings.auto_play,
+            last_played_category: None,
+            last_played_index: None,
         })
     }
 
@@ -281,19 +289,11 @@ impl App {
     }
 
     fn update(&mut self) {
-        if let Ok(_) = self.playback_ended_rx.try_recv() {
-            self.is_playing = false;
-            if self.autoplay_enabled && self.mode == AppMode::Playlist && !self.playlist_videos.is_empty() {
-                if let Some(current_idx) = self.playlist_videos_state.selected() {
-                    let next_idx = current_idx + 1;
-                    if next_idx < self.playlist_videos.len() {
-                        self.playlist_videos_state.select(Some(next_idx));
-                        let video = self.playlist_videos.get(next_idx).cloned();
-                        if let Some(v) = video {
-                            let v2 = v.clone();
-                            self.play_playlist_video(&v2);
-                        }
-                    }
+        if self.playback_ended_rx.try_recv().is_ok() {
+            if self.is_playing {
+                self.is_playing = false;
+                if self.autoplay_enabled {
+                    self.play_next_video();
                 }
             }
         }
@@ -416,6 +416,86 @@ impl App {
         }
         if let Err(e) = self.app_state.save() {
             eprintln!("Warning: Failed to save app state: {}", e);
+        }
+    }
+
+    pub fn recreate_player(&mut self, player_name: &str) {
+        let player = self.player.clone();
+        tokio::spawn(async move {
+            let _ = player.stop().await;
+        });
+
+        if let Some(new_player) = crate::player::create_player(
+            player_name,
+            self.playback_ended_tx.clone(),
+            self.notification_tx.clone(),
+        ) {
+            self.player = new_player;
+        }
+    }
+
+    fn play_next_video(&mut self) {
+        if self.is_playing {
+            return;
+        }
+        
+        let Some(category) = self.last_played_category.clone() else { return };
+        let Some(idx) = self.last_played_index else { return };
+
+        match category.as_str() {
+            "history" => {
+                if idx + 1 < self.history_results.len() {
+                    let next_idx = idx + 1;
+                    self.history_state.select(Some(next_idx));
+                    self.last_played_index = Some(next_idx);
+                    if let Some(entry) = self.history_results.get(next_idx).cloned() {
+                        self.play_history_video(&entry);
+                    }
+                }
+            }
+            "saved" => {
+                if idx + 1 < self.saved_results.len() {
+                    let next_idx = idx + 1;
+                    self.saved_state.select(Some(next_idx));
+                    self.last_played_index = Some(next_idx);
+                    if let Some(video) = self.saved_results.get(next_idx).cloned() {
+                        self.play_saved_video(&video);
+                    }
+                }
+            }
+            "search" => {
+                if idx + 1 < self.search_results.len() {
+                    let next_idx = idx + 1;
+                    self.list_state.select(Some(next_idx));
+                    self.last_played_index = Some(next_idx);
+                    if let Some(video) = self.search_results.get(next_idx).cloned() {
+                        self.play_search_video(&video);
+                    }
+                }
+            }
+            "main" => {
+                if idx + 1 < self.items.len() {
+                    let next_idx = idx + 1;
+                    self.list_state.select(Some(next_idx));
+                    self.last_played_index = Some(next_idx);
+                    if let Some(title) = self.items.get(next_idx).cloned() {
+                        self.play_main_video(&title);
+                    }
+                }
+            }
+            "playlist" => {
+                if self.mode == AppMode::Playlist && !self.playlist_videos.is_empty() {
+                    if idx + 1 < self.playlist_videos.len() {
+                        let next_idx = idx + 1;
+                        self.playlist_videos_state.select(Some(next_idx));
+                        self.last_played_index = Some(next_idx);
+                        if let Some(video) = self.playlist_videos.get(next_idx).cloned() {
+                            self.play_playlist_video(&video);
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1370,6 +1450,11 @@ impl App {
         self.is_playing = true;
         self.loading_message = format!("Playing: {}...", entry.title);
         
+        if let Some(idx) = self.history_state.selected() {
+            self.last_played_category = Some("history".to_string());
+            self.last_played_index = Some(idx);
+        }
+        
         let player = self.player.clone();
         let db = self.db.clone();
         let url = format!("https://www.youtube.com/watch?v={}", entry.video_id);
@@ -1377,15 +1462,21 @@ impl App {
         let title = entry.title.clone();
         let channel = entry.channel.clone();
         let quality = self.settings.default_quality.clone();
+        let loop_playback = self.settings.loop_playback;
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, &[]).await;
+            let _ = player.play(&url, &quality, loop_playback, &[]).await;
         });
     }
 
     fn play_saved_video(&mut self, video: &crate::db::connection::SavedVideo) {
         self.is_playing = true;
         self.loading_message = format!("Playing: {}...", video.title);
+        
+        if let Some(idx) = self.saved_state.selected() {
+            self.last_played_category = Some("saved".to_string());
+            self.last_played_index = Some(idx);
+        }
         
         let player = self.player.clone();
         let db = self.db.clone();
@@ -1394,15 +1485,21 @@ impl App {
         let title = video.title.clone();
         let channel = video.channel.clone();
         let quality = self.settings.default_quality.clone();
+        let loop_playback = self.settings.loop_playback;
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, &[]).await;
+            let _ = player.play(&url, &quality, loop_playback, &[]).await;
         });
     }
 
     fn play_search_video(&mut self, video: &crate::api::invidious::Video) {
         self.is_playing = true;
         self.loading_message = format!("Playing: {}...", video.title);
+        
+        if let Some(idx) = self.list_state.selected() {
+            self.last_played_category = Some("search".to_string());
+            self.last_played_index = Some(idx);
+        }
         
         let player = self.player.clone();
         let db = self.db.clone();
@@ -1411,9 +1508,10 @@ impl App {
         let title = video.title.clone();
         let channel = video.author.clone();
         let quality = self.settings.default_quality.clone();
+        let loop_playback = self.settings.loop_playback;
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, &[]).await;
+            let _ = player.play(&url, &quality, loop_playback, &[]).await;
         });
     }
 
@@ -1422,7 +1520,12 @@ impl App {
         let db = self.db.clone();
         let title = video_title.to_string();
         let quality = self.settings.default_quality.clone();
+        let loop_playback = self.settings.loop_playback;
         
+        if let Some(idx) = self.list_state.selected() {
+            self.last_played_category = Some("main".to_string());
+            self.last_played_index = Some(idx);
+        }
 
         self.is_playing = true;
         self.loading_message = format!("Playing: {}...", title);
@@ -1445,7 +1548,7 @@ impl App {
 
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, &[]).await;
+            let _ = player.play(&url, &quality, loop_playback, &[]).await;
         });
     }
 
@@ -1591,6 +1694,11 @@ impl App {
         self.is_playing = true;
         self.loading_message = format!("Playing: {}...", video.title);
         
+        if let Some(idx) = self.playlist_videos_state.selected() {
+            self.last_played_category = Some("playlist".to_string());
+            self.last_played_index = Some(idx);
+        }
+        
         let player = self.player.clone();
         let db = self.db.clone();
         let url = format!("https://www.youtube.com/watch?v={}", video.video_id);
@@ -1598,9 +1706,10 @@ impl App {
         let title = video.title.clone();
         let channel = video.channel.clone();
         let quality = self.settings.default_quality.clone();
+        let loop_playback = self.settings.loop_playback;
         tokio::spawn(async move {
             let _ = db.add_to_history(&video_id, &title, channel.as_deref());
-            let _ = player.play(&url, &quality, &[]).await;
+            let _ = player.play(&url, &quality, loop_playback, &[]).await;
         });
     }
 

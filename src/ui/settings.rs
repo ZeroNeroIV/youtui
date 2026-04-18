@@ -311,7 +311,9 @@ fn edit_setting(app: &mut App) {
                 .iter()
                 .position(|&p| p == app.settings.player)
                 .unwrap_or(0);
-            app.settings.player = players[(current_idx + 1) % players.len()].to_string();
+            let new_player = players[(current_idx + 1) % players.len()].to_string();
+            app.settings.player = new_player.clone();
+            app.recreate_player(&new_player);
         }
         9 => {
             // API instances might need a text input, but for now we keep it simple or leave it

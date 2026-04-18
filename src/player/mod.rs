@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 #[async_trait::async_trait]
 pub trait Player: Send + Sync {
-    async fn play(&self, url: &str, quality: &str, extra_args: &[&str]) -> Result<(), String>;
-    async fn play_audio(&self, url: &str, quality: &str, extra_args: &[&str]) -> Result<(), String>;
+    async fn play(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String>;
+    async fn play_audio(&self, url: &str, quality: &str, loop_playback: bool, extra_args: &[&str]) -> Result<(), String>;
     async fn stop(&self);
     async fn is_playing(&self) -> bool;
 }
