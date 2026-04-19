@@ -34,6 +34,12 @@ pub enum PlaylistPromptMode {
     Import,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum SearchFocus {
+    Input,
+    List,
+}
+
 pub enum SearchResponse {
     Success(Vec<crate::api::invidious::Video>),
     Error(String),
@@ -93,6 +99,7 @@ pub struct App {
     pub search_results: Vec<crate::api::invidious::Video>,
     pub is_searching: bool,
     pub search_error: Option<String>,
+    pub search_focus: SearchFocus,
     pub search_tx: tokio::sync::mpsc::Sender<SearchResponse>,
     pub search_rx: tokio::sync::mpsc::Receiver<SearchResponse>,
     pub saved_tx: tokio::sync::mpsc::Sender<SavedResponse>,
@@ -216,6 +223,7 @@ impl App {
             search_results: Vec::new(),
             is_searching: false,
             search_error: None,
+            search_focus: SearchFocus::Input,
             search_tx,
             search_rx,
             saved_tx,
@@ -534,68 +542,42 @@ impl App {
     }
 
     fn render_main_content(&mut self, f: &mut ratatui::Frame) {
-        let mut content_theme = self.theme.clone();
-        if self.active_block == ActiveBlock::Sidebar {
-            content_theme.foreground = self.theme.secondary;
-        }
-
         let content_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),
-                Constraint::Length(1),
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
             .split(self.content_area);
 
-        components::render_header(
-            f,
-            content_chunks[0],
-            "Videos",
-            &format!("• {} items", self.items.len()),
-            &content_theme,
-        );
+        let ascii_art = r##"
+    ___      ___      ___      ___      ___      ___      ___      ___ 
+   /   \    /   \    /   \    /   \    /   \    /   \    /   \    /   \
+  | () |    | () |    | () |    | () |    | () |    | () |    | () |    | () |
+  | \/ |    | \/ |    | \/ |    | \/ |    | \/ |    | \/ |    | \/ |    | \/ |
+   \__/     \__/     \__/     \__/     \__/     \__/     \__/     \__/  
+    |        |        |        |        |        |        |        |       
+    |   __   |   __   |   __   |   __   |   __   |   __   |   __   |   __  
+    |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+    |__|  |__|  |__|  |__|  |__|  |__|  |__|  |__|  |__|  |__|  |__|  |__| 
 
-        components::render_divider(f, content_chunks[1], &content_theme, Direction::Horizontal);
+   ╔═══════════════════════════════════════════════════════════════╗
+   ║              YOUTUI - YouTube Terminal                    ║
+   ║  ur linux yt client done proper - no browser required       ║
+   ║  's' to search • 'h' history • 'v' saved • 'p' playlists     ║
+   ╚═══════════════════════════════════════════════════════════════╝
+"##;
 
-        let item_height = 6 + components::DesignTokens::ITEM_GAP;
-        if self.items.is_empty() {
-            components::render_empty_state(
-                f,
-                content_chunks[2],
-                &content_theme,
-                "Videos",
-                "No videos available",
-                Some("📺"),
-            );
-        } else {
-            let content_offset = self.list_state.selected().unwrap_or(0);
-            let content_visible_count = (content_chunks[2].height / item_height) as usize;
-
-            for (i, item) in self
-                .items
-                .iter()
-                .enumerate()
-                .skip(content_offset)
-                .take(content_visible_count)
-            {
-                let rect = Rect::new(
-                    content_chunks[2].x,
-                    content_chunks[2].y + (i - content_offset) as u16 * item_height,
-                    content_chunks[2].width,
-                    6,
-                );
-                let is_selected = self.list_state.selected() == Some(i);
-                components::render_item_card(f, rect, item, "", &content_theme, is_selected, false);
-            }
-        }
+        let art_paragraph = Paragraph::new(ascii_art)
+            .style(Style::default().fg(self.theme.accent))
+            .alignment(ratatui::layout::Alignment::Center);
+        f.render_widget(art_paragraph, content_chunks[0]);
 
         components::render_info_bar(
             f,
-            content_chunks[3],
-            &[("Theme", &content_theme.name)],
-            &content_theme,
+            content_chunks[1],
+            &[("Theme", &self.theme.name)],
+            &self.theme,
         );
 
         if self.show_context_menu {
@@ -616,8 +598,6 @@ impl App {
             self.render_error_overlay(f);
         } else if self.is_loading {
             self.render_loading_overlay(f);
-        } else if self.items.is_empty() {
-            self.render_empty_state(f);
         }
     }
 
@@ -1112,8 +1092,12 @@ impl App {
                         } else if key.code == KeyCode::Down {
                             self.scroll_down();
                         } else if key.code == KeyCode::Tab {
-                            // Toggle between Sidebar and Content
-                            if self.active_block == ActiveBlock::Sidebar {
+                            if self.mode == AppMode::Search {
+                                self.search_focus = match self.search_focus {
+                                    SearchFocus::Input => SearchFocus::List,
+                                    SearchFocus::List => SearchFocus::Input,
+                                };
+                            } else if self.active_block == ActiveBlock::Sidebar {
                                 self.active_block = ActiveBlock::Content;
                             } else {
                                 self.active_block = ActiveBlock::Sidebar;
@@ -1125,50 +1109,59 @@ impl App {
                     }
                     AppMode::Search => match key.code {
                         KeyCode::Char(c) => {
-                            self.search_query.push(c);
-                            self.search_results.clear();
-                            self.list_state = ListState::default();
-                            self.list_state.select(Some(0));
+                            if self.search_focus == SearchFocus::Input {
+                                self.search_query.push(c);
+                                self.search_results.clear();
+                                self.list_state = ListState::default();
+                                self.list_state.select(Some(0));
+                            }
                         }
                         KeyCode::Backspace => {
-                            self.search_query.pop();
-                            self.search_results.clear();
-                            self.list_state = ListState::default();
-                            self.list_state.select(Some(0));
+                            if self.search_focus == SearchFocus::Input {
+                                self.search_query.pop();
+                                self.search_results.clear();
+                                self.list_state = ListState::default();
+                                self.list_state.select(Some(0));
+                            }
                         }
                         KeyCode::Up => {
-                            let i = match self.list_state.selected() {
-                                Some(i) => {
-                                    if i == 0 {
-                                        self.search_results.len().saturating_sub(1)
-                                    } else {
-                                        i - 1
+                            if self.search_focus == SearchFocus::List {
+                                let i = match self.list_state.selected() {
+                                    Some(i) => {
+                                        if i == 0 {
+                                            self.search_results.len().saturating_sub(1)
+                                        } else {
+                                            i - 1
+                                        }
                                     }
-                                }
-                                None => 0,
-                            };
-                            self.list_state.select(Some(i));
+                                    None => 0,
+                                };
+                                self.list_state.select(Some(i));
+                            }
                         }
                         KeyCode::Down => {
-                            let i = match self.list_state.selected() {
-                                Some(i) => (i + 1) % self.search_results.len().max(1),
-                                None => 0,
-                            };
-                            self.list_state.select(Some(i));
+                            if self.search_focus == SearchFocus::List {
+                                let i = match self.list_state.selected() {
+                                    Some(i) => (i + 1) % self.search_results.len().max(1),
+                                    None => 0,
+                                };
+                                self.list_state.select(Some(i));
+                            }
                         }
                         KeyCode::Esc => {
                             self.mode = AppMode::Main;
                         }
-                        KeyCode::Enter => {
-
-                            if !self.search_results.is_empty() {
+KeyCode::Enter => {
+                            if self.search_focus == SearchFocus::Input {
+                                if !self.search_query.is_empty() {
+                                    self.trigger_search();
+                                }
+                            } else if !self.search_results.is_empty() {
                                 if let Some(idx) = self.list_state.selected() {
                                     if let Some(video) = self.search_results.get(idx).cloned() {
                                         self.play_search_video(&video);
                                     }
                                 }
-                            } else if !self.search_query.is_empty() {
-                                self.trigger_search();
                             }
 
                         }

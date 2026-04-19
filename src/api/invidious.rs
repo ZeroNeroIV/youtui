@@ -5,6 +5,7 @@ use std::time::Duration;
 #[allow(dead_code)]
 const DEFAULT_TIMEOUT_SECS: u64 = 10;
 const MAX_RETRIES: u32 = 3;
+const RETRY_DELAY_MS: u64 = 500;
 
 /// Client for interacting with the Invidious API
 #[derive(Clone)]
@@ -27,6 +28,8 @@ pub enum InvidiousError {
     ApiError(String),
     #[error("Instance is bad (returns HTML or 403)")]
     BadInstance,
+    #[error("Server error: {0}")]
+    ServerError(String),
     #[error("Video not found: {0}")]
     NotFound(String),
 }
@@ -56,44 +59,55 @@ pub struct InvidiousFormat {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Video {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub video_type: String,
+    #[serde(default)]
     pub title: String,
-    #[serde(rename = "videoId")]
+    #[serde(rename = "videoId", default)]
     pub video_id: String,
+    #[serde(default)]
     pub author: Option<String>,
-    #[serde(rename = "authorId")]
+    #[serde(rename = "authorId", default)]
     pub author_id: Option<String>,
-    #[serde(rename = "authorUrl")]
+    #[serde(rename = "authorUrl", default)]
     pub author_url: Option<String>,
-    #[serde(rename = "authorThumbnails")]
+    #[serde(rename = "authorThumbnails", default)]
     pub author_thumbnails: Option<Vec<Thumbnail>>,
-    #[serde(rename = "videoThumbnails")]
+    #[serde(rename = "videoThumbnails", default)]
     pub video_thumbnails: Vec<Thumbnail>,
+    #[serde(default)]
     pub description: Option<String>,
-    #[serde(rename = "descriptionHtml")]
+    #[serde(rename = "descriptionHtml", default)]
     pub description_html: Option<String>,
-    #[serde(rename = "viewCount")]
+    #[serde(rename = "viewCount", default)]
     pub view_count: Option<i64>,
-    #[serde(rename = "likeCount")]
+    #[serde(rename = "likeCount", default)]
     pub like_count: Option<i32>,
-    #[serde(rename = "dislikeCount")]
+    #[serde(rename = "dislikeCount", default)]
     pub dislike_count: Option<i32>,
+    #[serde(default)]
     pub published: Option<i64>,
-    #[serde(rename = "publishedText")]
+    #[serde(rename = "publishedText", default)]
     pub published_text: Option<String>,
-    #[serde(rename = "lengthSeconds")]
+    #[serde(rename = "lengthSeconds", default)]
     pub length_seconds: Option<i32>,
+    #[serde(default)]
     pub live_now: Option<bool>,
+    #[serde(default)]
     pub paid: Option<bool>,
+    #[serde(default)]
     pub premium: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Thumbnail {
+    #[serde(default)]
     pub quality: Option<String>,
+    #[serde(default)]
     pub url: String,
+    #[serde(default)]
     pub width: Option<i32>,
+    #[serde(default)]
     pub height: Option<i32>,
 }
 
@@ -119,39 +133,45 @@ pub struct Channel {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Playlist {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub playlist_type: String,
+    #[serde(default)]
     pub title: String,
-    #[serde(rename = "playlistId")]
+    #[serde(rename = "playlistId", default)]
     pub playlist_id: String,
-    #[serde(rename = "playlistThumbnail")]
+    #[serde(rename = "playlistThumbnail", default)]
     pub playlist_thumbnail: Option<String>,
+    #[serde(default)]
     pub author: Option<String>,
-    #[serde(rename = "authorId")]
+    #[serde(rename = "authorId", default)]
     pub author_id: Option<String>,
-    #[serde(rename = "authorUrl")]
+    #[serde(rename = "authorUrl", default)]
     pub author_url: Option<String>,
-    #[serde(rename = "authorVerified")]
+    #[serde(rename = "authorVerified", default)]
     pub author_verified: Option<bool>,
-    #[serde(rename = "videoCount")]
+    #[serde(rename = "videoCount", default)]
     pub video_count: Option<i32>,
+    #[serde(default)]
     pub videos: Option<Vec<PlaylistVideo>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlaylistVideo {
+    #[serde(default)]
     pub title: String,
-    #[serde(rename = "videoId")]
+    #[serde(rename = "videoId", default)]
     pub video_id: String,
+    #[serde(default)]
     pub author: Option<String>,
-    #[serde(rename = "authorId")]
+    #[serde(rename = "authorId", default)]
     pub author_id: Option<String>,
-    #[serde(rename = "authorUrl")]
+    #[serde(rename = "authorUrl", default)]
     pub author_url: Option<String>,
-    #[serde(rename = "videoThumbnails")]
+    #[serde(rename = "videoThumbnails", default)]
     pub video_thumbnails: Option<Vec<Thumbnail>>,
+    #[serde(default)]
     pub index: Option<i32>,
-    #[serde(rename = "lengthSeconds")]
+    #[serde(rename = "lengthSeconds", default)]
     pub length_seconds: Option<i32>,
 }
 
@@ -159,16 +179,17 @@ pub struct PlaylistVideo {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlaylistDetails {
     pub title: String,
-    #[serde(rename = "playlistId")]
+    #[serde(rename = "playlistId", default)]
     pub playlist_id: String,
     pub author: Option<String>,
-    #[serde(rename = "authorId")]
+    #[serde(rename = "authorId", default)]
     pub author_id: Option<String>,
     pub description: Option<String>,
-    #[serde(rename = "videoCount")]
+    #[serde(rename = "videoCount", default)]
     pub video_count: i32,
-    #[serde(rename = "viewCount")]
+    #[serde(rename = "viewCount", default)]
     pub view_count: Option<i64>,
+    #[serde(default)]
     pub videos: Vec<PlaylistVideo>,
 }
 
@@ -256,7 +277,7 @@ impl InvidiousClient {
                     }
                     // Retry on server errors (5xx)
                     if response.status().is_server_error() {
-                        last_error = Some(InvidiousError::ApiError(format!(
+                        last_error = Some(InvidiousError::ServerError(format!(
                             "Server error: {}",
                             response.status()
                         )));
@@ -277,10 +298,18 @@ impl InvidiousClient {
                     retries += 1;
                 }
             }
+
+            // Wait before retrying
+            if retries <= MAX_RETRIES {
+                tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+            }
         }
 
-        Err(last_error
-            .unwrap_or_else(|| InvidiousError::ApiError("Max retries exceeded".to_string())))
+        if let Some(InvidiousError::ServerError(_)) = last_error {
+            Err(InvidiousError::BadInstance)
+        } else {
+            Err(last_error.unwrap_or_else(|| InvidiousError::ApiError("Max retries exceeded".to_string())))
+        }
     }
 
     /// Search for videos
