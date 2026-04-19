@@ -1,3 +1,4 @@
+use crate::db::connection::Filterable;
 use crate::download::downloader::{DownloadProgress, Downloader};
 use crate::error::AppError;
 use crate::ui::components;
@@ -439,6 +440,16 @@ impl App {
         }
     }
 
+    fn filter_by_query<T: Filterable>(&self, items: &[T]) -> Vec<T>
+    where
+        T: Clone,
+    {
+        if self.search_query.is_empty() {
+            return items.to_vec();
+        }
+        items.iter().filter(|i| i.matches_query(&self.search_query)).cloned().collect()
+    }
+
     fn play_next_video(&mut self) {
         if self.is_playing {
             return;
@@ -602,11 +613,12 @@ impl App {
     }
 
     fn render_history(&mut self, f: &mut ratatui::Frame, area: Rect) {
+        let filtered = self.filter_by_query(&self.history_results);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
-                Constraint::Length(1),
+                Constraint::Length(5),
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
@@ -616,13 +628,26 @@ impl App {
             f,
             chunks[0],
             "History",
-            &format!("• {} items", self.history_results.len()),
+            &format!("• {} items", filtered.len()),
             &self.theme,
         );
 
-        components::render_divider(f, chunks[1], &self.theme, Direction::Horizontal);
+        let display_text = if self.search_query.is_empty() {
+            "Filter history...".to_string()
+        } else {
+            format!("{}▌", self.search_query)
+        };
+        let input = Paragraph::new(display_text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red))
+                    .padding(Padding::uniform(1)),
+            )
+            .style(Style::default().fg(Color::Yellow).bg(Color::Blue));
+        f.render_widget(input, chunks[1]);
 
-        if self.history_results.is_empty() {
+        if filtered.is_empty() {
             components::render_empty_state(
                 f,
                 chunks[2],
@@ -636,8 +661,7 @@ impl App {
             let offset = self.history_state.selected().unwrap_or(0);
             let visible_count = (chunks[2].height / item_height) as usize;
 
-            for (i, entry) in self
-                .history_results
+            for (i, entry) in filtered
                 .iter()
                 .enumerate()
                 .skip(offset)
@@ -665,15 +689,16 @@ impl App {
             }
         }
 
-        components::render_info_bar(f, chunks[3], &[("Theme", &self.theme.name)], &self.theme);
+        components::render_info_bar(f, chunks[3], &[("Theme", &self.theme.name), ("Filter", &self.search_query)], &self.theme);
     }
 
     fn render_saved(&mut self, f: &mut ratatui::Frame, area: Rect) {
+        let filtered = self.filter_by_query(&self.saved_results);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
-                Constraint::Length(1),
+                Constraint::Length(5),
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
@@ -683,13 +708,26 @@ impl App {
             f,
             chunks[0],
             "Saved",
-            &format!("• {} items", self.saved_results.len()),
+            &format!("• {} items", filtered.len()),
             &self.theme,
         );
 
-        components::render_divider(f, chunks[1], &self.theme, Direction::Horizontal);
+        let display_text = if self.search_query.is_empty() {
+            "Filter saved...".to_string()
+        } else {
+            format!("{}▌", self.search_query)
+        };
+        let input = Paragraph::new(display_text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red))
+                    .padding(Padding::uniform(1)),
+            )
+            .style(Style::default().fg(Color::Yellow).bg(Color::Blue));
+        f.render_widget(input, chunks[1]);
 
-        if self.saved_results.is_empty() {
+        if filtered.is_empty() {
             components::render_empty_state(
                 f,
                 chunks[2],
@@ -698,13 +736,12 @@ impl App {
                 components::ErrorCategory::EmptySaved.message(),
                 Some("🔖"),
             );
-        } else {
+} else {
             let item_height = 6 + components::DesignTokens::ITEM_GAP;
             let offset = self.saved_state.selected().unwrap_or(0);
             let visible_count = (chunks[2].height / item_height) as usize;
 
-            for (i, video) in self
-                .saved_results
+            for (i, entry) in filtered
                 .iter()
                 .enumerate()
                 .skip(offset)
@@ -716,14 +753,14 @@ impl App {
                     chunks[2].width,
                     6,
                 );
-                let channel = video.channel.as_deref().unwrap_or("Unknown");
-                let meta = format!("{} • Saved {}", channel, video.saved_at);
+                let channel = entry.channel.as_deref().unwrap_or("Unknown");
+                let meta = format!("{} • Saved {}", channel, entry.saved_at);
                 let is_selected = self.saved_state.selected() == Some(i);
 
                 components::render_item_card(
                     f,
                     rect,
-                    &video.title,
+                    &entry.title,
                     &meta,
                     &self.theme,
                     is_selected,
@@ -732,7 +769,7 @@ impl App {
             }
         }
 
-        components::render_info_bar(f, chunks[3], &[("Theme", &self.theme.name)], &self.theme);
+        components::render_info_bar(f, chunks[3], &[("Theme", &self.theme.name), ("Filter", &self.search_query)], &self.theme);
     }
 
     fn render_playlist(&mut self, f: &mut ratatui::Frame, area: Rect) {

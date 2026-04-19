@@ -4,6 +4,28 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tracing::info;
 
+pub trait Filterable {
+    fn matches_query(&self, query: &str) -> bool;
+}
+
+impl Filterable for HistoryEntry {
+    fn matches_query(&self, query: &str) -> bool {
+        let q = query.to_lowercase();
+        self.title.to_lowercase().contains(&q)
+            || self.channel.as_ref().map(|c| c.to_lowercase().contains(&q)).unwrap_or(false)
+            || self.video_id.to_lowercase().contains(&q)
+    }
+}
+
+impl Filterable for SavedVideo {
+    fn matches_query(&self, query: &str) -> bool {
+        let q = query.to_lowercase();
+        self.title.to_lowercase().contains(&q)
+            || self.channel.as_ref().map(|c| c.to_lowercase().contains(&q)).unwrap_or(false)
+            || self.video_id.to_lowercase().contains(&q)
+    }
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -43,6 +65,21 @@ pub struct PlaylistVideo {
     pub title: String,
     pub channel: Option<String>,
     pub position: i32,
+}
+
+impl Filterable for Playlist {
+    fn matches_query(&self, query: &str) -> bool {
+        self.name.to_lowercase().contains(&query.to_lowercase())
+    }
+}
+
+impl Filterable for PlaylistVideo {
+    fn matches_query(&self, query: &str) -> bool {
+        let q = query.to_lowercase();
+        self.title.to_lowercase().contains(&q)
+            || self.channel.as_ref().map(|c| c.to_lowercase().contains(&q)).unwrap_or(false)
+            || self.video_id.to_lowercase().contains(&q)
+    }
 }
 
 impl Database {
