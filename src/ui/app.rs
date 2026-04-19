@@ -1129,7 +1129,7 @@ impl App {
                         } else if key.code == KeyCode::Down {
                             self.scroll_down();
                         } else if key.code == KeyCode::Tab {
-                            if self.mode == AppMode::Search {
+                            if self.mode == AppMode::Search || self.mode == AppMode::History || self.mode == AppMode::Saved || self.mode == AppMode::Playlist {
                                 self.search_focus = match self.search_focus {
                                     SearchFocus::Input => SearchFocus::List,
                                     SearchFocus::List => SearchFocus::Input,
@@ -1206,10 +1206,14 @@ KeyCode::Enter => {
                     },
                     AppMode::History => match key.code {
                         KeyCode::Char(c) => {
-                            self.search_query.push(c);
+                            if self.search_focus == SearchFocus::Input {
+                                self.search_query.push(c);
+                            }
                         }
                         KeyCode::Backspace => {
-                            self.search_query.pop();
+                            if self.search_focus == SearchFocus::Input {
+                                self.search_query.pop();
+                            }
                         }
                         KeyCode::Up => self.scroll_history_up(),
                         KeyCode::Down => self.scroll_history_down(),
@@ -1238,10 +1242,14 @@ KeyCode::Enter => {
                     },
                     AppMode::Saved => match key.code {
                         KeyCode::Char(c) => {
-                            self.search_query.push(c);
+                            if self.search_focus == SearchFocus::Input {
+                                self.search_query.push(c);
+                            }
                         }
                         KeyCode::Backspace => {
-                            self.search_query.pop();
+                            if self.search_focus == SearchFocus::Input {
+                                self.search_query.pop();
+                            }
                         }
                         KeyCode::Up => {
                             let i = match self.saved_state.selected() {
@@ -1325,10 +1333,14 @@ KeyCode::Enter => {
                         } else {
                             match key.code {
                                 KeyCode::Char(c) => {
-                                    self.search_query.push(c);
+                                    if self.search_focus == SearchFocus::Input {
+                                        self.search_query.push(c);
+                                    }
                                 }
                                 KeyCode::Backspace => {
-                                    self.search_query.pop();
+                                    if self.search_focus == SearchFocus::Input {
+                                        self.search_query.pop();
+                                    }
                                 }
                                 KeyCode::Up => {
                                     if !self.playlist_videos.is_empty() {
