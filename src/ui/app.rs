@@ -1205,6 +1205,12 @@ KeyCode::Enter => {
                         _ => {}
                     },
                     AppMode::History => match key.code {
+                        KeyCode::Char(c) => {
+                            self.search_query.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            self.search_query.pop();
+                        }
                         KeyCode::Up => self.scroll_history_up(),
                         KeyCode::Down => self.scroll_history_down(),
                         KeyCode::Enter => {
@@ -1225,11 +1231,18 @@ KeyCode::Enter => {
                         }
                         KeyCode::Esc => {
                             self.mode = AppMode::Main;
+                            self.search_query.clear();
                         }
                         KeyCode::Char('d') => self.handle_download_shortcut(),
                         _ => {}
                     },
                     AppMode::Saved => match key.code {
+                        KeyCode::Char(c) => {
+                            self.search_query.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            self.search_query.pop();
+                        }
                         KeyCode::Up => {
                             let i = match self.saved_state.selected() {
                                 Some(i) => {
@@ -1274,6 +1287,7 @@ KeyCode::Enter => {
                         }
                         KeyCode::Esc => {
                             self.mode = AppMode::Main;
+                            self.search_query.clear();
                         }
                         KeyCode::Char('d') => self.handle_download_shortcut(),
                         _ => {}
@@ -1310,6 +1324,12 @@ KeyCode::Enter => {
                             }
                         } else {
                             match key.code {
+                                KeyCode::Char(c) => {
+                                    self.search_query.push(c);
+                                }
+                                KeyCode::Backspace => {
+                                    self.search_query.pop();
+                                }
                                 KeyCode::Up => {
                                     if !self.playlist_videos.is_empty() {
                                         self.scroll_playlist_videos_up();
