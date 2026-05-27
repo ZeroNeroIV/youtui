@@ -52,6 +52,14 @@ impl crate::player::Player for MpvPlayer {
     async fn queue_video(&self, url: &str) -> Result<(), String> {
         self.queue_video(url).await
     }
+
+    async fn toggle_pause(&self) {
+        self.toggle_pause().await
+    }
+
+    async fn seek(&self, secs: i64) {
+        self.seek(secs).await
+    }
 }
 
 impl MpvPlayer {
@@ -278,10 +286,20 @@ impl MpvPlayer {
             }
         }
 
+        let sock = make_socket_path();
+        {
+            let mut sp = inner.socket_path.lock().await;
+            *sp = Some(sock.clone());
+        }
+
         let mut cmd = tokio::process::Command::new(&path);
 
         cmd.arg("--keep-open=no");
-        
+        cmd.arg(format!("--input-ipc-server={}", sock));
+        if let Some(mpris) = find_mpris_script() {
+            cmd.arg(format!("--script={}", mpris));
+        }
+
         if loop_playback {
             cmd.arg("--loop");
         }
@@ -358,11 +376,21 @@ impl MpvPlayer {
 
         self.stop().await;
 
+        let sock = make_socket_path();
+        {
+            let mut sp = self.inner.socket_path.lock().await;
+            *sp = Some(sock.clone());
+        }
+
         let mut cmd = tokio::process::Command::new(&path);
 
         // Exit immediately when video ends (don't wait for user input)
         // Use --keep-open=no instead of --quit-after-end for better compatibility
         cmd.arg("--keep-open=no");
+        cmd.arg(format!("--input-ipc-server={}", sock));
+        if let Some(mpris) = find_mpris_script() {
+            cmd.arg(format!("--script={}", mpris));
+        }
         
         if loop_playback {
             cmd.arg("--loop");
@@ -475,6 +503,21 @@ impl MpvPlayer {
         Ok(())
     }
 
+    pub async fn toggle_pause(&self) {
+        if let Some(sock) = self.inner.socket_path.lock().await.clone() {
+            tokio::task::spawn_blocking(move || {
+                send_ipc_blocking(&sock, "{\"command\":[\"cycle\",\"pause\"]}")
+            });
+        }
+    }
+
+    pub async fn seek(&self, secs: i64) {
+        if let Some(sock) = self.inner.socket_path.lock().await.clone() {
+            let payload = format!("{{\"command\":[\"seek\",{},\"relative\"]}}", secs);
+            tokio::task::spawn_blocking(move || send_ipc_blocking(&sock, &payload));
+        }
+    }
+
     pub async fn stop(&self) {
         let mut process = self.inner.process.lock().await;
 
@@ -523,3 +566,36 @@ fn extract_video_id(url: &str) -> Option<String> {
     None
 }
 
+
+
+fn make_socket_path() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let n = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("/tmp/youtui-mpv-{}-{}.sock", std::process::id(), n)
+}
+
+fn send_ipc_blocking(sock: &str, payload: &str) {
+    use std::io::Write;
+    if let Ok(mut s) = std::os::unix::net::UnixStream::connect(sock) {
+        let _ = s.write_all(payload.as_bytes());
+        let _ = s.write_all(b"\n");
+        let _ = s.flush();
+    }
+}
+
+/// Locate the mpv-mpris script (.so) so hardware/media keys (headset
+/// play/pause/next) can control mpv via MPRIS. Returns None if not installed.
+fn find_mpris_script() -> Option<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let candidates = [
+        "/usr/lib/mpv-mpris/mpris.so".to_string(),
+        "/usr/share/mpv-mpris/mpris.so".to_string(),
+        "/usr/lib/mpv/scripts/mpris.so".to_string(),
+        format!("{}/.config/mpv/scripts/mpris.so", home),
+        "/etc/mpv/scripts/mpris.so".to_string(),
+    ];
+    candidates.into_iter().find(|p| std::path::Path::new(p).exists())
+}
