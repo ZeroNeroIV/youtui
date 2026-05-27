@@ -1,327 +1,193 @@
 use crate::ui::app::{App, AppMode};
+use crossterm::event::KeyCode;
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Padding, Paragraph, Wrap},
+    Frame,
+};
 
-pub fn render_in_panel(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App) {
-    render(f, area, app);
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SettingRow {
+    ApiInvidious,
+    ApiPiped,
+    Player,
+    Quality,
+    Format,
+    DownloadPath,
+    LogLevel,
+    AutoPlay,
+    LoopPlayback,
 }
 
-pub fn render(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &mut App) {
-    use crate::ui::components::{render_divider, render_header, render_info_bar, DesignTokens};
-    use ratatui::layout::{Constraint, Direction, Layout};
-    use ratatui::style::Style;
-    use ratatui::widgets::{Block, Padding, Paragraph};
+const ROWS: &[SettingRow] = &[
+    SettingRow::ApiInvidious,
+    SettingRow::ApiPiped,
+    SettingRow::Player,
+    SettingRow::Quality,
+    SettingRow::Format,
+    SettingRow::DownloadPath,
+    SettingRow::LogLevel,
+    SettingRow::AutoPlay,
+    SettingRow::LoopPlayback,
+];
 
+fn row_label(row: SettingRow) -> &'static str {
+    match row {
+        SettingRow::ApiInvidious => "API Instance (Invidious)",
+        SettingRow::ApiPiped    => "API Instance (Piped)",
+        SettingRow::Player      => "Player  [Enter to cycle: mpv / vlc / mplayer]",
+        SettingRow::Quality     => "Default Quality  [Enter to cycle: 1080 / 720 / 480 / 360]",
+        SettingRow::Format      => "Default Format  [Enter to cycle: mp4 / webm / audio-only]",
+        SettingRow::DownloadPath => "Download Path  [Enter to open Yazi folder picker]",
+        SettingRow::LogLevel    => "Log Level  [Enter to cycle: info / debug / warn / error]",
+        SettingRow::AutoPlay    => "Auto-play next  [Enter to toggle]",
+        SettingRow::LoopPlayback => "Loop playback  [Enter to toggle]",
+    }
+}
+
+fn row_value(row: SettingRow, app: &App) -> String {
+    match row {
+        SettingRow::ApiInvidious  => app.settings.api_instance_invidious.clone(),
+        SettingRow::ApiPiped      => app.settings.api_instance_piped.clone(),
+        SettingRow::Player        => app.settings.player.clone(),
+        SettingRow::Quality       => app.settings.default_quality.clone(),
+        SettingRow::Format        => app.settings.default_format.clone(),
+        SettingRow::DownloadPath  => app.settings.download_path.display().to_string(),
+        SettingRow::LogLevel      => app.settings.log_level.clone(),
+        SettingRow::AutoPlay      => if app.settings.auto_play { "on".into() } else { "off".into() },
+        SettingRow::LoopPlayback  => if app.settings.loop_playback { "on".into() } else { "off".into() },
+    }
+}
+
+pub fn render(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
-    render_header(f, chunks[0], "Settings", "", &app.theme);
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled("Settings", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw("  — ↑/↓ navigate  •  Enter to change  •  Esc back"),
+    ]))
+    .block(Block::default().borders(Borders::BOTTOM).padding(Padding::horizontal(1)));
+    f.render_widget(header, chunks[0]);
 
-    let content_area = chunks[1];
-    let selected_idx = app.settings_state.selected().unwrap_or(0);
+    let selected = app.settings_state.selected().unwrap_or(0);
+    let inner = chunks[1];
 
-    let highlight_color = app.theme.highlight;
-    let secondary_color = app.theme.secondary;
-    let foreground_color = app.theme.foreground;
-
-    let mut current_y = 0;
-    let total_height = content_area.height;
-
-    let render_section = |f: &mut ratatui::Frame, y: &mut u16, title: &str| {
-        let section_area = ratatui::layout::Rect {
-            x: content_area.x,
-            y: content_area.y + *y,
-            width: content_area.width,
-            height: 2,
-        };
-        render_header(f, section_area, title, "", &app.theme);
-        *y += 2;
-
-        let divider_area = ratatui::layout::Rect {
-            x: content_area.x,
-            y: content_area.y + *y,
-            width: content_area.width,
-            height: 1,
-        };
-        render_divider(f, divider_area, &app.theme, Direction::Horizontal);
-        *y += 1;
-    };
-
-    let render_row =
-        |f: &mut ratatui::Frame, y: &mut u16, label: &str, value: &str, is_selected: bool| {
-            if *y >= total_height {
-                return;
-            }
-
-            let row_area = ratatui::layout::Rect {
-                x: content_area.x,
-                y: content_area.y + *y,
-                width: content_area.width,
-                height: 1,
-            };
-
-            let row_layout = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-                .split(row_area);
-
-            let label_style = if is_selected {
-                Style::default()
-                    .fg(secondary_color)
-                    .bg(highlight_color)
-                    .add_modifier(ratatui::style::Modifier::BOLD)
-            } else {
-                Style::default().fg(secondary_color)
-            };
-            let label_para = Paragraph::new(label)
-                .style(label_style)
-                .block(Block::default().padding(Padding::horizontal(DesignTokens::PADDING_MD)));
-
-            let value_style = if is_selected {
-                Style::default()
-                    .fg(foreground_color)
-                    .bg(highlight_color)
-                    .add_modifier(ratatui::style::Modifier::BOLD)
-            } else {
-                Style::default().fg(foreground_color)
-            };
-            let value_para = Paragraph::new(value)
-                .style(value_style)
-                .block(Block::default().padding(Padding::horizontal(DesignTokens::PADDING_MD)));
-
-            f.render_widget(label_para, row_layout[0]);
-            f.render_widget(value_para, row_layout[1]);
-
-            *y += 1;
-        };
-
-    render_section(f, &mut current_y, "Playback");
-    render_row(
-        f,
-        &mut current_y,
-        "Loop Playback",
-        if app.settings.loop_playback {
-            "On"
+    for (i, &row) in ROWS.iter().enumerate() {
+        let row_h = 2u16;
+        let row_y = inner.y + i as u16 * row_h;
+        if row_y + row_h > inner.y + inner.height {
+            break;
+        }
+        let rect = Rect::new(inner.x, row_y, inner.width, row_h);
+        let is_selected = i == selected;
+        let val_style = if is_selected {
+            Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
         } else {
-            "Off"
-        },
-        selected_idx == 0,
-    );
-    render_row(
-        f,
-        &mut current_y,
-        "Auto Play",
-        if app.settings.auto_play { "On" } else { "Off" },
-        selected_idx == 1,
-    );
-    render_row(
-        f,
-        &mut current_y,
-        "Instance Mode",
-        match app.settings.player_instance_mode {
-            crate::config::settings::PlayerInstanceMode::Single => "Single",
-            crate::config::settings::PlayerInstanceMode::Multiple => "Multiple",
-        },
-        selected_idx == 2,
-    );
-    render_row(
-        f,
-        &mut current_y,
-        "Quality",
-        &app.settings.default_quality,
-        selected_idx == 3,
-    );
-    render_row(
-        f,
-        &mut current_y,
-        "Format",
-        &app.settings.default_format,
-        selected_idx == 4,
-    );
+            Style::default()
+        };
 
-    render_section(f, &mut current_y, "General");
-    render_row(
-        f,
-        &mut current_y,
-        "Theme",
-        &app.settings.theme,
-        selected_idx == 5,
-    );
-    render_row(
-        f,
-        &mut current_y,
-        "Log Level",
-        &app.settings.log_level,
-        selected_idx == 6,
-    );
-    let download_path = app.settings.download_path.to_string_lossy();
-    render_row(
-        f,
-        &mut current_y,
-        "Download Path",
-        &download_path,
-        selected_idx == 7,
-    );
-    render_row(
-        f,
-        &mut current_y,
-        "Player",
-        &app.settings.player,
-        selected_idx == 8,
-    );
+        let content = vec![
+            Line::from(Span::styled(
+                format!(" {}", row_label(row)),
+                Style::default().add_modifier(Modifier::DIM),
+            )),
+            Line::from(Span::styled(format!("   {}", row_value(row, app)), val_style)),
+        ];
+        let para = Paragraph::new(content)
+            .block(Block::default().borders(Borders::NONE))
+            .wrap(Wrap { trim: true });
+        f.render_widget(para, rect);
+    }
 
-    render_section(f, &mut current_y, "API");
-    render_row(
-        f,
-        &mut current_y,
-        "Invidious API",
-        &app.settings.api_instance_invidious,
-        selected_idx == 9,
-    );
-    render_row(
-        f,
-        &mut current_y,
-        "Piped API",
-        &app.settings.api_instance_piped,
-        selected_idx == 10,
-    );
-
-    render_info_bar(
-        f,
-        chunks[2],
-        &[("Navigate", "↑↓"), ("Select", "Enter"), ("Back", "Esc")],
-        &app.theme,
-    );
+    let footer = Paragraph::new("  ↑/↓ Navigate  •  Enter Change  •  Esc Back  •  Changes saved automatically")
+        .block(Block::default().borders(Borders::TOP));
+    f.render_widget(footer, chunks[2]);
 }
 
-pub fn handle_events(app: &mut App, key: crossterm::event::KeyCode) {
+pub fn handle_events(app: &mut App, key: KeyCode) {
+    let max = ROWS.len().saturating_sub(1);
     match key {
-        crossterm::event::KeyCode::Esc => {
+        KeyCode::Up => {
+            let i = app.settings_state.selected().unwrap_or(0).saturating_sub(1);
+            app.settings_state.select(Some(i));
+        }
+        KeyCode::Down => {
+            let i = (app.settings_state.selected().unwrap_or(0) + 1).min(max);
+            app.settings_state.select(Some(i));
+        }
+        KeyCode::Enter => {
+            let idx = app.settings_state.selected().unwrap_or(0);
+            if let Some(&row) = ROWS.get(idx) {
+                cycle_setting(app, row);
+            }
+        }
+        KeyCode::Esc => {
             app.mode = AppMode::Main;
-        }
-        crossterm::event::KeyCode::Up => {
-            let i = match app.settings_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        10
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-            app.settings_state.select(Some(i));
-        }
-        crossterm::event::KeyCode::Down => {
-            let i = match app.settings_state.selected() {
-                Some(i) => (i + 1) % 11,
-                None => 0,
-            };
-            app.settings_state.select(Some(i));
-        }
-        crossterm::event::KeyCode::Enter => {
-            edit_setting(app);
         }
         _ => {}
     }
 }
 
-fn edit_setting(app: &mut App) {
-    let selected = app.settings_state.selected().unwrap_or(0);
-    match selected {
-        0 => {
+fn cycle_setting(app: &mut App, row: SettingRow) {
+    match row {
+        SettingRow::Player => {
+            let players = ["mpv", "vlc", "mplayer", "ffplay"];
+            let cur = players.iter().position(|&p| p == app.settings.player.as_str()).unwrap_or(0);
+            let next = players[(cur + 1) % players.len()];
+            app.settings.player = next.to_string();
+            app.recreate_player(next);
+        }
+        SettingRow::Quality => {
+            let opts = ["1080", "720", "480", "360", "240"];
+            let cur = opts.iter().position(|&q| q == app.settings.default_quality.as_str()).unwrap_or(0);
+            app.settings.default_quality = opts[(cur + 1) % opts.len()].to_string();
+        }
+        SettingRow::Format => {
+            let opts = ["mp4", "webm", "mkv", "mp3"];
+            let cur = opts.iter().position(|&f| f == app.settings.default_format.as_str()).unwrap_or(0);
+            app.settings.default_format = opts[(cur + 1) % opts.len()].to_string();
+        }
+        SettingRow::LogLevel => {
+            let opts = ["info", "debug", "warn", "error"];
+            let cur = opts.iter().position(|&l| l == app.settings.log_level.as_str()).unwrap_or(0);
+            app.settings.log_level = opts[(cur + 1) % opts.len()].to_string();
+        }
+        SettingRow::AutoPlay => {
+            app.settings.auto_play = !app.settings.auto_play;
+            app.autoplay_enabled = app.settings.auto_play;
+        }
+        SettingRow::LoopPlayback => {
             app.settings.loop_playback = !app.settings.loop_playback;
         }
-        1 => {
-            app.settings.auto_play = !app.settings.auto_play;
-        }
-        2 => {
-            app.settings.player_instance_mode = match app.settings.player_instance_mode {
-                crate::config::settings::PlayerInstanceMode::Single => {
-                    crate::config::settings::PlayerInstanceMode::Multiple
-                }
-                crate::config::settings::PlayerInstanceMode::Multiple => {
-                    crate::config::settings::PlayerInstanceMode::Single
-                }
-            };
-        }
-        3 => {
-            let qualities = ["144", "240", "360", "480", "720", "1080", "1440", "2160"];
-            let current_idx = qualities
-                .iter()
-                .position(|&q| q == app.settings.default_quality)
-                .unwrap_or(0);
-            app.settings.default_quality =
-                qualities[(current_idx + 1) % qualities.len()].to_string();
-        }
-        4 => {
-            let formats = ["mp4", "mkv", "webm", "mp3"];
-            let current_idx = formats
-                .iter()
-                .position(|&f| f == app.settings.default_format)
-                .unwrap_or(0);
-            app.settings.default_format = formats[(current_idx + 1) % formats.len()].to_string();
-        }
-        5 => {
-            let themes = crate::ui::theme::Theme::all_themes();
-            let current_idx = themes
-                .iter()
-                .position(|&t| t == app.settings.theme)
-                .unwrap_or(0);
-            let next_theme = themes[(current_idx + 1) % themes.len()];
-            app.settings.theme = next_theme.to_string();
-            if let Some(new_theme) = crate::ui::theme::Theme::from_name(next_theme) {
-                app.theme = new_theme;
-            }
-        }
-        6 => {
-            let levels = ["trace", "debug", "info", "warn", "error"];
-            let current_idx = levels
-                .iter()
-                .position(|&l| l == app.settings.log_level)
-                .unwrap_or(2); // Default to "info"
-            app.settings.log_level = levels[(current_idx + 1) % levels.len()].to_string();
-            crate::utils::logger::update_log_level(&app.settings.log_level);
-        }
-        7 => {
-            if let Some(home) = dirs::home_dir() {
-                let paths = [
-                    home.join("Downloads"),
-                    home.join("Videos"),
-                    home.join("Videos/youtui"),
-                    dirs::data_local_dir()
-                        .map(|p| p.join("youtui-rs/downloads"))
-                        .unwrap_or_else(|| home.join("Downloads")),
-                ];
-                let current_str = app.settings.download_path.to_string_lossy().to_string();
-                let current_idx = paths
-                    .iter()
-                    .position(|p| p.to_string_lossy() == current_str)
-                    .unwrap_or(0);
-                app.settings.download_path = paths[(current_idx + 1) % paths.len()].clone();
-            }
-        }
-        8 => {
-            let players = ["mpv", "vlc"];
-            let current_idx = players
-                .iter()
-                .position(|&p| p == app.settings.player)
-                .unwrap_or(0);
-            let new_player = players[(current_idx + 1) % players.len()].to_string();
-            app.settings.player = new_player.clone();
-            app.recreate_player(&new_player);
-        }
-        9 => {
-            // API instances might need a text input, but for now we keep it simple or leave it
-        }
-        10 => {
-            // API instances might need a text input, but for now we keep it simple or leave it
+        SettingRow::DownloadPath => {
+            // Suspend the TUI, open yazi, resume
+            suspend_tui_and_run(app, |a| a.pick_download_path_with_yazi());
         }
         _ => {}
     }
     let _ = app.settings.save();
+}
+
+fn suspend_tui_and_run<F: FnOnce(&mut App)>(app: &mut App, f: F) {
+    use crossterm::{
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen},
+        event::{DisableMouseCapture, EnableMouseCapture},
+    };
+    let mut stdout = std::io::stdout();
+
+    // Suspend TUI
+    let _ = disable_raw_mode();
+    let _ = execute!(stdout, LeaveAlternateScreen, DisableMouseCapture);
+
+    f(app);
+
+    // Resume TUI
+    let _ = enable_raw_mode();
+    let _ = execute!(stdout, EnterAlternateScreen, EnableMouseCapture);
 }

@@ -22,6 +22,8 @@ pub struct MpvPlayerInner {
     quality: Mutex<String>,
     format: Mutex<String>,
     loop_playback: Mutex<bool>,
+    invidious_url: String,
+    piped_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -56,8 +58,15 @@ impl MpvPlayer {
     pub fn new(
         playback_ended_tx: tokio::sync::mpsc::Sender<()>,
         notification_tx: broadcast::Sender<PlaybackNotification>,
+        invidious_url: Option<&str>,
+        piped_url: Option<&str>,
     ) -> Self {
-        info!("Creating MpvPlayer");
+        info!("Creating MpvPlayer with invidious: {:?}, piped: {:?}", invidious_url, piped_url);
+        
+        // Use settings URLs, fall back to defaults if not provided
+        let inv_url = invidious_url.unwrap_or("https://invidious.snopyta.org");
+        let pip_url = piped_url.unwrap_or("https://pipedapi.kavin.rocks");
+        
         Self {
             inner: std::sync::Arc::new(MpvPlayerInner {
                 process: Mutex::new(None),
@@ -68,6 +77,8 @@ impl MpvPlayer {
                 quality: Mutex::new("1080p".to_string()),
                 format: Mutex::new("video".to_string()),
                 loop_playback: Mutex::new(false),
+                invidious_url: inv_url.to_string(),
+                piped_url: pip_url.to_string(),
             }),
         }
     }
@@ -173,13 +184,16 @@ impl MpvPlayer {
             let mut provider_index = 0;
             let start = std::time::Instant::now();
             
+            let invidious_url = inner.invidious_url.clone();
+            let piped_url = inner.piped_url.clone();
+            
             let providers: Vec<Box<dyn crate::api::providers::StreamProvider>> = vec![
                 Box::new(crate::api::providers::YtdlpProvider),
                 Box::new(crate::api::providers::InvidiousProvider { 
-                    client: crate::api::invidious::InvidiousClient::new("https://invidious.snopyta.org") 
+                    client: crate::api::invidious::InvidiousClient::new(&invidious_url) 
                 }),
                 Box::new(crate::api::providers::PipedProvider { 
-                    client: crate::api::piped::PipedClient::new("https://pipedapi.kavin.rocks") 
+                    client: crate::api::piped::PipedClient::new(&piped_url) 
                 }),
             ];
 
