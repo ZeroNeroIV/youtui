@@ -60,6 +60,10 @@ impl crate::player::Player for MpvPlayer {
     async fn seek(&self, secs: i64) {
         self.seek(secs).await
     }
+
+    async fn set_volume(&self, delta: i64) {
+        self.set_volume(delta).await
+    }
 }
 
 impl MpvPlayer {
@@ -514,6 +518,13 @@ impl MpvPlayer {
     pub async fn seek(&self, secs: i64) {
         if let Some(sock) = self.inner.socket_path.lock().await.clone() {
             let payload = format!("{{\"command\":[\"seek\",{},\"relative\"]}}", secs);
+            tokio::task::spawn_blocking(move || send_ipc_blocking(&sock, &payload));
+        }
+    }
+
+    pub async fn set_volume(&self, delta: i64) {
+        if let Some(sock) = self.inner.socket_path.lock().await.clone() {
+            let payload = format!("{{\"command\":[\"add\",\"volume\",{}]}}", delta);
             tokio::task::spawn_blocking(move || send_ipc_blocking(&sock, &payload));
         }
     }
