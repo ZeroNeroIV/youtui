@@ -1,475 +1,157 @@
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use reqwest::Client;
 
-#[allow(dead_code)]
-const DEFAULT_TIMEOUT_SECS: u64 = 10;
-const MAX_RETRIES: u32 = 3;
-const RETRY_DELAY_MS: u64 = 500;
+#[derive(Debug, thiserror::Error)]
+pub enum InvidiousError {
+    #[error("Bad or unreachable Invidious instance")]
+    BadInstance,
+    #[error("Request failed: {0}")]
+    RequestFailed(String),
+    #[error("Video not found: {0}")]
+    NotFound(String),
+    #[error("Parse error: {0}")]
+    Parse(String),
+}
 
-/// Client for interacting with the Invidious API
-#[derive(Clone)]
+impl From<reqwest::Error> for InvidiousError {
+    fn from(e: reqwest::Error) -> Self {
+        if e.is_connect() || e.is_timeout() {
+            InvidiousError::BadInstance
+        } else {
+            InvidiousError::RequestFailed(e.to_string())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Video {
+    #[serde(rename = "videoId")]
+    pub video_id: String,
+    pub title: String,
+    pub author: Option<String>,
+    #[serde(rename = "viewCount")]
+    pub view_count: Option<u64>,
+    #[serde(rename = "lengthSeconds")]
+    pub length_seconds: Option<u64>,
+    #[serde(rename = "publishedText")]
+    pub published_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaylistVideo {
+    #[serde(rename = "videoId")]
+    pub video_id: String,
+    pub title: String,
+    pub author: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaylistDetails {
+    pub title: String,
+    pub videos: Vec<PlaylistVideo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AdaptiveFormat {
+    url: String,
+    #[serde(rename = "type")]
+    mime_type: String,
+    #[serde(rename = "resolution", default)]
+    resolution: Option<String>,
+    quality: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VideoDetails {
+    #[serde(rename = "adaptiveFormats", default)]
+    adaptive_formats: Vec<AdaptiveFormat>,
+    #[serde(rename = "formatStreams", default)]
+    format_streams: Vec<AdaptiveFormat>,
+}
+
 pub struct InvidiousClient {
     base_url: String,
     client: Client,
 }
 
-// ============================================================================
-// Error Types
-// ============================================================================
-
-#[derive(Debug, thiserror::Error)]
-pub enum InvidiousError {
-    #[error("HTTP request failed: {0}")]
-    RequestFailed(#[from] reqwest::Error),
-    #[error("JSON parse error: {0}")]
-    JsonParse(#[from] serde_json::Error),
-    #[error("API error: {0}")]
-    ApiError(String),
-    #[error("Instance is bad (returns HTML or 403)")]
-    BadInstance,
-    #[error("Server error: {0}")]
-    ServerError(String),
-    #[error("Video not found: {0}")]
-    NotFound(String),
-}
-
-impl serde::Serialize for InvidiousError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct InvidiousStreams {
-    pub url: String,
-    #[serde(rename = "adaptiveFormats")]
-    pub adaptive_formats: Vec<InvidiousFormat>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct InvidiousFormat {
-    pub url: String,
-    pub quality: String,
-    pub mime_type: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Video {
-    #[serde(rename = "type", default)]
-    pub video_type: String,
-    #[serde(default)]
-    pub title: String,
-    #[serde(rename = "videoId", default)]
-    pub video_id: String,
-    #[serde(default)]
-    pub author: Option<String>,
-    #[serde(rename = "authorId", default)]
-    pub author_id: Option<String>,
-    #[serde(rename = "authorUrl", default)]
-    pub author_url: Option<String>,
-    #[serde(rename = "authorThumbnails", default)]
-    pub author_thumbnails: Option<Vec<Thumbnail>>,
-    #[serde(rename = "videoThumbnails", default)]
-    pub video_thumbnails: Vec<Thumbnail>,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(rename = "descriptionHtml", default)]
-    pub description_html: Option<String>,
-    #[serde(rename = "viewCount", default)]
-    pub view_count: Option<i64>,
-    #[serde(rename = "likeCount", default)]
-    pub like_count: Option<i32>,
-    #[serde(rename = "dislikeCount", default)]
-    pub dislike_count: Option<i32>,
-    #[serde(default)]
-    pub published: Option<i64>,
-    #[serde(rename = "publishedText", default)]
-    pub published_text: Option<String>,
-    #[serde(rename = "lengthSeconds", default)]
-    pub length_seconds: Option<i32>,
-    #[serde(default)]
-    pub live_now: Option<bool>,
-    #[serde(default)]
-    pub paid: Option<bool>,
-    #[serde(default)]
-    pub premium: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Thumbnail {
-    #[serde(default)]
-    pub quality: Option<String>,
-    #[serde(default)]
-    pub url: String,
-    #[serde(default)]
-    pub width: Option<i32>,
-    #[serde(default)]
-    pub height: Option<i32>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Channel {
-    #[serde(rename = "type")]
-    pub channel_type: String,
-    pub author: String,
-    #[serde(rename = "authorId")]
-    pub author_id: String,
-    #[serde(rename = "authorUrl")]
-    pub author_url: String,
-    #[serde(rename = "authorThumbnails")]
-    pub author_thumbnails: Option<Vec<Thumbnail>>,
-    pub auto_generated: Option<bool>,
-    pub sub_count: Option<i32>,
-    #[serde(rename = "videoCount")]
-    pub video_count: Option<i32>,
-    pub description: Option<String>,
-    #[serde(rename = "descriptionHtml")]
-    pub description_html: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Playlist {
-    #[serde(rename = "type", default)]
-    pub playlist_type: String,
-    #[serde(default)]
-    pub title: String,
-    #[serde(rename = "playlistId", default)]
-    pub playlist_id: String,
-    #[serde(rename = "playlistThumbnail", default)]
-    pub playlist_thumbnail: Option<String>,
-    #[serde(default)]
-    pub author: Option<String>,
-    #[serde(rename = "authorId", default)]
-    pub author_id: Option<String>,
-    #[serde(rename = "authorUrl", default)]
-    pub author_url: Option<String>,
-    #[serde(rename = "authorVerified", default)]
-    pub author_verified: Option<bool>,
-    #[serde(rename = "videoCount", default)]
-    pub video_count: Option<i32>,
-    #[serde(default)]
-    pub videos: Option<Vec<PlaylistVideo>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PlaylistVideo {
-    #[serde(default)]
-    pub title: String,
-    #[serde(rename = "videoId", default)]
-    pub video_id: String,
-    #[serde(default)]
-    pub author: Option<String>,
-    #[serde(rename = "authorId", default)]
-    pub author_id: Option<String>,
-    #[serde(rename = "authorUrl", default)]
-    pub author_url: Option<String>,
-    #[serde(rename = "videoThumbnails", default)]
-    pub video_thumbnails: Option<Vec<Thumbnail>>,
-    #[serde(default)]
-    pub index: Option<i32>,
-    #[serde(rename = "lengthSeconds", default)]
-    pub length_seconds: Option<i32>,
-}
-
-/// Detailed playlist response from Invidious API
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PlaylistDetails {
-    pub title: String,
-    #[serde(rename = "playlistId", default)]
-    pub playlist_id: String,
-    pub author: Option<String>,
-    #[serde(rename = "authorId", default)]
-    pub author_id: Option<String>,
-    pub description: Option<String>,
-    #[serde(rename = "videoCount", default)]
-    pub video_count: i32,
-    #[serde(rename = "viewCount", default)]
-    pub view_count: Option<i64>,
-    #[serde(default)]
-    pub videos: Vec<PlaylistVideo>,
-}
-
-/// Search result enum - can be video, channel, playlist, or hashtag
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
-pub enum SearchResult {
-    Video(Video),
-    Channel(Channel),
-    Playlist(Playlist),
-    Hashtag {
-        #[serde(rename = "type")]
-        hashtag_type: String,
-        title: String,
-        url: String,
-    },
-}
-
-impl SearchResult {
-    pub fn as_video(&self) -> Option<&Video> {
-        match self {
-            SearchResult::Video(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-// ============================================================================
-// InvidiousClient Implementation
-// ============================================================================
-
 impl InvidiousClient {
-    /// Create a new InvidiousClient with the default Invidious instance
     pub fn new(base_url: &str) -> Self {
-        Self::with_client(base_url, Client::new())
-    }
-
-    /// Create a new InvidiousClient with a custom reqwest Client
-    pub fn with_client(base_url: &str, client: Client) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
-            client,
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap_or_default(),
         }
     }
 
-    /// Create a new InvidiousClient with custom timeout
-    pub fn with_timeout(base_url: &str, timeout_secs: u64) -> Result<Self, InvidiousError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(timeout_secs))
-            .build()?;
-        Ok(Self::with_client(base_url, client))
-    }
-
-    /// Build the API URL for a given endpoint
-    fn api_url(&self, endpoint: &str) -> String {
-        format!(
-            "{}/api/v1/{}",
-            self.base_url,
-            endpoint.trim_start_matches('/')
-        )
-    }
-
-    /// Perform a GET request with retry logic
-    async fn get(&self, url: &str) -> Result<String, InvidiousError> {
-        let mut retries = 0;
-        let mut last_error = None;
-
-        while retries <= MAX_RETRIES {
-            match self.client.get(url).send().await {
-                Ok(response) => {
-                    if response.status() == reqwest::StatusCode::FORBIDDEN {
-                        return Err(InvidiousError::BadInstance);
-                    }
-
-                    if let Some(content_type) = response.headers().get(reqwest::header::CONTENT_TYPE) {
-                        if let Ok(ct_str) = content_type.to_str() {
-                            if ct_str.contains("text/html") {
-                                return Err(InvidiousError::BadInstance);
-                            }
-                        }
-                    }
-
-                    if response.status().is_success() {
-                        return Ok(response.text().await?);
-                    }
-                    // Retry on server errors (5xx)
-                    if response.status().is_server_error() {
-                        last_error = Some(InvidiousError::ServerError(format!(
-                            "Server error: {}",
-                            response.status()
-                        )));
-                        retries += 1;
-                        continue;
-                    }
-                    // Not found is a clear error
-                    if response.status() == reqwest::StatusCode::NOT_FOUND {
-                        return Err(InvidiousError::NotFound(url.to_string()));
-                    }
-                    return Err(InvidiousError::ApiError(format!(
-                        "HTTP error: {}",
-                        response.status()
-                    )));
-                }
-                Err(e) => {
-                    last_error = Some(InvidiousError::RequestFailed(e));
-                    retries += 1;
-                }
-            }
-
-            // Wait before retrying
-            if retries <= MAX_RETRIES {
-                tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)).await;
-            }
-        }
-
-        if let Some(InvidiousError::ServerError(_)) = last_error {
-            Err(InvidiousError::BadInstance)
-        } else {
-            Err(last_error.unwrap_or_else(|| InvidiousError::ApiError("Max retries exceeded".to_string())))
-        }
-    }
-
-    /// Search for videos
     pub async fn search(&self, query: &str) -> Result<Vec<Video>, InvidiousError> {
-        let url = format!(
-            "{}?q={}",
-            self.api_url("/search"),
-            urlencoding::encode(query)
-        );
-        let response = self.get(&url).await?;
+        let url = format!("{}/api/v1/search?q={}&type=video", self.base_url, urlencoding(query));
+        let resp = self.client.get(&url).send().await?;
 
-        let results: Vec<SearchResult> = serde_json::from_str(&response)?;
-        let videos: Vec<Video> = results
-            .into_iter()
-            .filter_map(|r| r.as_video().cloned())
-            .collect();
-
-        Ok(videos)
-    }
-
-    /// Search for videos with optional filters
-    pub async fn search_with_options(
-        &self,
-        query: &str,
-        search_type: Option<&str>,
-        region: Option<&str>,
-        sort: Option<&str>,
-    ) -> Result<Vec<Video>, InvidiousError> {
-        let mut url = format!(
-            "{}?q={}",
-            self.api_url("/search"),
-            urlencoding::encode(query)
-        );
-
-        if let Some(t) = search_type {
-            url.push_str(&format!("&type={}", t));
-        }
-        if let Some(r) = region {
-            url.push_str(&format!("&region={}", r));
-        }
-        if let Some(s) = sort {
-            url.push_str(&format!("&sort={}", s));
+        if !resp.status().is_success() {
+            return Err(InvidiousError::RequestFailed(format!("HTTP {}", resp.status())));
         }
 
-        let response = self.get(&url).await?;
+        let items: serde_json::Value = resp.json().await
+            .map_err(|e| InvidiousError::RequestFailed(e.to_string()))?;
 
-        let results: Vec<SearchResult> = serde_json::from_str(&response)?;
-        let videos: Vec<Video> = results
-            .into_iter()
-            .filter_map(|r| r.as_video().cloned())
+        let videos = items.as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("video"))
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
             .collect();
 
         Ok(videos)
     }
 
-    /// Get video details by ID
-    pub async fn get_video(&self, video_id: &str) -> Result<Video, InvidiousError> {
-        let url = self.api_url(&format!("/videos/{}", video_id));
-        let response = self.get(&url).await?;
-
-        let video: Video = serde_json::from_str(&response)?;
-        Ok(video)
-    }
-
-    /// Get trending videos
-    pub async fn get_trending(&self) -> Result<Vec<Video>, InvidiousError> {
-        let url = self.api_url("/trending");
-        let response = self.get(&url).await?;
-
-        let results: Vec<SearchResult> = serde_json::from_str(&response)?;
-        let videos: Vec<Video> = results
-            .into_iter()
-            .filter_map(|r| r.as_video().cloned())
-            .collect();
-
-        Ok(videos)
-    }
-
-    /// Get popular videos
-    pub async fn get_popular(&self) -> Result<Vec<Video>, InvidiousError> {
-        let url = self.api_url("/popular");
-        let response = self.get(&url).await?;
-
-        let results: Vec<SearchResult> = serde_json::from_str(&response)?;
-        let videos: Vec<Video> = results
-            .into_iter()
-            .filter_map(|r| r.as_video().cloned())
-            .collect();
-
-        Ok(videos)
-    }
-
-    /// Get playlist details by playlist ID
     pub async fn get_playlist(&self, playlist_id: &str) -> Result<PlaylistDetails, InvidiousError> {
-        let url = self.api_url(&format!("/playlists/{}", playlist_id));
-        let response = self.get(&url).await?;
+        let url = format!("{}/api/v1/playlists/{}", self.base_url, playlist_id);
+        let resp = self.client.get(&url).send().await?;
 
-        let playlist: PlaylistDetails = serde_json::from_str(&response)?;
-        Ok(playlist)
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(InvidiousError::NotFound(playlist_id.to_string()));
+        }
+        if !resp.status().is_success() {
+            return Err(InvidiousError::RequestFailed(format!("HTTP {}", resp.status())));
+        }
+
+        let details: PlaylistDetails = resp.json().await
+            .map_err(|e| InvidiousError::RequestFailed(e.to_string()))?;
+        Ok(details)
     }
 
     pub async fn get_stream_url(&self, video_id: &str) -> Result<String, InvidiousError> {
-        let url = self.api_url(&format!("/videos/{}/streams", video_id));
-        let response = self.get(&url).await?;
-        let streams: InvidiousStreams = serde_json::from_str(&response)?;
-        Ok(streams.url)
-    }
-}
+        let url = format!("{}/api/v1/videos/{}", self.base_url, video_id);
+        let resp = self.client.get(&url).send().await?;
 
-// ============================================================================
-// URL Encoding Helper (simple implementation)
-// ============================================================================
-
-mod urlencoding {
-    pub fn encode(input: &str) -> String {
-        let mut encoded = String::new();
-        for byte in input.bytes() {
-            match byte {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    encoded.push(byte as char);
-                }
-                _ => {
-                    encoded.push_str(&format!("%{:02X}", byte));
-                }
-            }
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(InvidiousError::NotFound(video_id.to_string()));
         }
-        encoded
+        if !resp.status().is_success() {
+            return Err(InvidiousError::RequestFailed(format!("HTTP {}", resp.status())));
+        }
+
+        let details: VideoDetails = resp.json().await
+            .map_err(|e| InvidiousError::RequestFailed(e.to_string()))?;
+
+        if let Some(f) = details.format_streams.first() {
+            return Ok(f.url.clone());
+        }
+        if let Some(f) = details.adaptive_formats.first() {
+            return Ok(f.url.clone());
+        }
+
+        Err(InvidiousError::NotFound(video_id.to_string()))
     }
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_url_encoding() {
-        assert_eq!(urlencoding::encode("hello world"), "hello%20world");
-        assert_eq!(urlencoding::encode("test?query=1"), "test%3Fquery%3D1");
-    }
-
-    #[test]
-    fn test_client_creation() {
-        let client = InvidiousClient::new("https://invidious.snopyta.org");
-        assert_eq!(client.base_url, "https://invidious.snopyta.org");
-    }
-
-    #[test]
-    fn test_api_url_building() {
-        let client = InvidiousClient::new("https://invidious.snopyta.org");
-        assert_eq!(
-            client.api_url("/search"),
-            "https://invidious.snopyta.org/api/v1/search"
-        );
-        assert_eq!(
-            client.api_url("search"),
-            "https://invidious.snopyta.org/api/v1/search"
-        );
-    }
+fn urlencoding(s: &str) -> String {
+    s.chars().map(|c| match c {
+        'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+        ' ' => '+'.to_string(),
+        c => format!("%{:02X}", c as u32),
+    }).collect()
 }

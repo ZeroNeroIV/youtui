@@ -6,96 +6,118 @@ pub struct Downloader;
 
 #[derive(Debug, Clone)]
 pub enum DownloadProgress {
-    Starting,
-    Downloading { percent: u8, speed: String },
-    Completed { path: String },
+    Starting { title: String },
+    Downloading { title: String, percent: u8, speed: String, eta: String },
+    Completed { title: String, path: String },
     Failed { error: String },
 }
 
 impl Downloader {
     pub fn download(
         video_id: &str,
-        output_path: &Path,
-        format_spec: Option<&str>,
+        output_dir: &Path,
+        audio_only: bool,
     ) -> mpsc::Receiver<DownloadProgress> {
-        let (tx, rx) = mpsc::channel(32);
+        let (tx, rx) = mpsc::channel(64);
 
         let video_id = video_id.to_string();
-        let output_path_str = output_path.to_string_lossy().to_string();
-        let format = format_spec
-            .unwrap_or("bestvideo+bestaudio/best")
+        // yt-dlp needs a template, not a bare directory
+        let output_template = output_dir
+            .join("%(title)s.%(ext)s")
+            .to_string_lossy()
             .to_string();
 
         std::thread::spawn(move || {
-            let _ = tx.blocking_send(DownloadProgress::Starting);
+            let _ = tx.blocking_send(DownloadProgress::Starting {
+                title: video_id.clone(),
+            });
 
             let mut cmd = std::process::Command::new("yt-dlp");
             cmd.arg(format!("https://youtube.com/watch?v={}", video_id))
-                .arg("-f")
-                .arg(&format)
-                .arg("-o")
-                .arg(&output_path_str)
-                .arg("--no-warnings")
-                .arg("--progress")
-                .stdout(std::process::Stdio::piped())
+                .arg("-o").arg(&output_template)
+                .arg("--newline")      // one progress line per update
+                .arg("--no-part");     // no .part files
+
+            if audio_only {
+                cmd.arg("-f").arg("bestaudio/best")
+                    .arg("-x")
+                    .arg("--audio-format").arg("mp3");
+            } else {
+                cmd.arg("-f").arg("bestvideo+bestaudio/best")
+                    .arg("--merge-output-format").arg("mp4");
+            }
+
+            cmd.stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped());
 
             match cmd.spawn() {
                 Ok(mut child) => {
                     use std::io::{BufRead, BufReader};
 
+                    // Spawn stderr reader thread so it doesn't fill/block
+                    let stderr_lines: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+                        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+                    let stderr_lines_clone = stderr_lines.clone();
+
+                    if let Some(stderr) = child.stderr.take() {
+                        std::thread::spawn(move || {
+                            let reader = BufReader::new(stderr);
+                            for line in reader.lines().map_while(Result::ok) {
+                                tracing::debug!("[yt-dlp stderr] {}", line);
+                                stderr_lines_clone.lock().unwrap().push(line);
+                            }
+                        });
+                    }
+
+                    let mut current_title = video_id.clone();
+
                     if let Some(stdout) = child.stdout.take() {
                         let reader = BufReader::new(stdout);
                         for line in reader.lines().map_while(Result::ok) {
-                            if line.contains("%") && line.contains("download") {
-                                if let Some(start) = line.find('%') {
-                                    let before = &line[..start];
-                                    if let Some(percent_start) = before.rfind(' ') {
-                                        if let Ok(percent) =
-                                            before[percent_start + 1..].trim().parse::<f64>()
-                                        {
-                                            let pct = percent as u8;
-                                            let speed = if let Some(speed_start) = line.find("at ")
-                                            {
-                                                let after_at = &line[speed_start + 3..];
-                                                if let Some(speed_end) = after_at.find(" ETA") {
-                                                    after_at[..speed_end].to_string()
-                                                } else {
-                                                    "calculating...".to_string()
-                                                }
-                                            } else {
-                                                "...".to_string()
-                                            };
-
-                                            let _ =
-                                                tx.blocking_send(DownloadProgress::Downloading {
-                                                    percent: pct.min(100),
-                                                    speed,
-                                                });
-                                        }
-                                    }
+                            // Extract destination filename
+                            if line.starts_with("[download] Destination:") {
+                                let path = line
+                                    .trim_start_matches("[download] Destination:")
+                                    .trim()
+                                    .to_string();
+                                // Use the stem of the filename as the title
+                                if let Some(name) = std::path::Path::new(&path)
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                {
+                                    current_title = name.to_string();
                                 }
+                                continue;
                             }
-                        }
-                    }
 
-                    if let Some(stderr) = child.stderr.take() {
-                        let reader = std::io::BufReader::new(stderr);
-                        for line in reader.lines().map_while(Result::ok) {
-                            tracing::debug!("[yt-dlp stderr] {}", line);
+                            // Parse progress lines: "[download]  12.3% of 1.24MiB at 2.93MiB/s ETA 00:10"
+                            if line.starts_with("[download]") && line.contains('%') {
+                                let (percent, speed, eta) = parse_progress(&line);
+                                let _ = tx.blocking_send(DownloadProgress::Downloading {
+                                    title: current_title.clone(),
+                                    percent,
+                                    speed,
+                                    eta,
+                                });
+                            }
                         }
                     }
 
                     match child.wait() {
                         Ok(status) if status.success() => {
                             let _ = tx.blocking_send(DownloadProgress::Completed {
-                                path: output_path_str,
+                                title: current_title,
+                                path: output_template,
                             });
                         }
-                        Ok(_) => {
-                            let _ = tx.blocking_send(DownloadProgress::Failed {
-                                error: "Download failed".to_string(),
-                            });
+                        Ok(status) => {
+                            let stderr_msg = stderr_lines.lock().unwrap().join(" | ");
+                            let err = if stderr_msg.is_empty() {
+                                format!("yt-dlp exited with status {}", status)
+                            } else {
+                                stderr_msg
+                            };
+                            let _ = tx.blocking_send(DownloadProgress::Failed { error: err });
                         }
                         Err(e) => {
                             let _ = tx.blocking_send(DownloadProgress::Failed {
@@ -106,7 +128,7 @@ impl Downloader {
                 }
                 Err(e) => {
                     let _ = tx.blocking_send(DownloadProgress::Failed {
-                        error: e.to_string(),
+                        error: format!("Failed to start yt-dlp: {}", e),
                     });
                 }
             }
@@ -119,6 +141,36 @@ impl Downloader {
         let formats = YtdlpWrapper::get_formats(video_id).map_err(|e| e.to_string())?;
         Ok(formats.into_iter().map(FormatInfo::from).collect())
     }
+}
+
+fn parse_progress(line: &str) -> (u8, String, String) {
+    let percent = line
+        .find('%')
+        .and_then(|idx| {
+            line[..idx]
+                .rsplit_once(' ')
+                .and_then(|(_, num)| num.trim().parse::<f64>().ok())
+        })
+        .map(|p| p.clamp(0.0, 100.0) as u8)
+        .unwrap_or(0);
+
+    let speed = line
+        .find(" at ")
+        .map(|idx| {
+            let after = &line[idx + 4..];
+            after
+                .find(" ETA")
+                .map(|end| after[..end].trim().to_string())
+                .unwrap_or_else(|| after.split_whitespace().next().unwrap_or("").to_string())
+        })
+        .unwrap_or_default();
+
+    let eta = line
+        .find("ETA ")
+        .map(|idx| line[idx + 4..].split_whitespace().next().unwrap_or("").to_string())
+        .unwrap_or_default();
+
+    (percent, speed, eta)
 }
 
 #[derive(Debug, Clone)]
@@ -137,7 +189,6 @@ impl From<crate::api::ytdlp::YtdlpFormat> for FormatInfo {
         } else {
             f.ext.clone()
         };
-
         Self {
             format_id: f.format_id,
             label,

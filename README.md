@@ -1,39 +1,145 @@
 # youtui-rs
 
-A feature-rich YouTube terminal client in Rust built with ratatui.
+A fast YouTube client for your terminal, written in Rust with [ratatui](https://ratatui.rs).
+Search, play, and download videos or audio without ever opening a browser.
+
+```
+  ██╗   ██╗ ██████╗ ██╗   ██╗████████╗██╗   ██╗██╗
+  ╚██╗ ██╔╝██╔═══██╗██║   ██║╚══██╔══╝██║   ██║██║
+   ╚████╔╝ ██║   ██║██║   ██║   ██║   ██║   ██║██║
+    ╚██╔╝  ██║   ██║██║   ██║   ██║   ██║   ██║██║
+     ██║   ╚██████╔╝╚██████╔╝   ██║   ╚██████╔╝██║
+     ╚═╝    ╚═════╝  ╚═════╝    ╚═╝    ╚═════╝ ╚═╝
+```
 
 ## Features
 
-- Search and play YouTube videos
-- Watch history with persistence
-- Save/bookmark videos
-- Local playlists + YouTube playlist sync
-- Download to disk
-- 6 themed color schemes (terminal, tokyo, monokai, light, dark, retro)
-- Full mouse support (click, scroll, context menus)
-- Cross-platform (Linux-primary, macOS/Windows/BSD)
+- **Search** YouTube via Invidious, with automatic fallback across multiple
+  public instances (keeps working even while a download is running)
+- **Play** videos/audio through mpv
+- **Download** as video (mp4) or audio (mp3) — choose from a popup on `d`
+- **Downloads page** lists everything you've downloaded; press Enter to play a
+  local file
+- **Animated bottom bar** shows live download progress (%, speed, ETA) and
+  playback status (loading / playing + elapsed time / errors)
+- **Watch history**, **saved videos**, and **local + imported playlists**, all
+  persisted in SQLite
+- **Settings**: cycle media player (mpv / vlc / mplayer / ffplay), pick your
+  download folder with [Yazi](https://github.com/sxyazi/yazi), set quality,
+  format, and more
+- Uses your **terminal's own color scheme** — no hard-coded themes to clash
+  with your setup
+- Full mouse support (click, scroll, right-click context menu)
 
 ## Requirements
 
-- Rust 1.70+
-- mpv (for video playback)
-- yt-dlp (for downloads and fallback)
+- [Rust](https://rustup.rs) 1.70 or newer (to build)
+- [`mpv`](https://mpv.io) — video/audio playback
+- [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) — downloads and stream resolution
+- [`yazi`](https://github.com/sxyazi/yazi) — *optional*, for the folder picker
+
+On Arch Linux:
+
+```bash
+sudo pacman -S mpv yt-dlp yazi
+```
+
+On Debian/Ubuntu:
+
+```bash
+sudo apt install mpv
+# yt-dlp: see https://github.com/yt-dlp/yt-dlp#installation
+```
 
 ## Installation
 
+### Option A — build and symlink (recommended)
+
+Build the optimized release binary, then create a symlink named `youtui` on
+your `PATH` so you can launch it from anywhere:
+
+```bash
+# 1. Clone and enter the repo
+git clone https://github.com/ZeroNeroIV/youtui.git
+cd youtui
+
+# 2. Build the release binary
+cargo build --release
+
+# 3. Symlink it as `youtui` into a directory on your PATH
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/target/release/youtui-rs" ~/.local/bin/youtui
+
+# 4. Make sure ~/.local/bin is on your PATH (add to ~/.bashrc or ~/.zshrc if not)
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Now run it from anywhere:
+
+```bash
+youtui
+```
+
+The symlink points at the build output, so future `cargo build --release` runs
+update the `youtui` command automatically — no need to re-link.
+
+### Option B — cargo install
+
 ```bash
 cargo install --path .
+# installs the `youtui-rs` binary into ~/.cargo/bin
 ```
 
 ## Usage
 
 ```bash
-youtui-rs
+youtui            # launch the app
+youtui --debug    # launch with debug logging to the terminal
 ```
+
+### Keybindings
+
+| Key       | Action                                  |
+|-----------|-----------------------------------------|
+| `s`       | Search                                  |
+| `h`       | History                                 |
+| `v`       | Saved videos                            |
+| `p`       | Playlists                               |
+| `Tab`     | Toggle focus (sidebar ↔ list)           |
+| `↑` / `↓` | Navigate                                |
+| `Enter`   | Play selected (or open / play download) |
+| `d`       | Download — opens Video / Audio popup    |
+| `a`       | Add to playlist                         |
+| `Esc`     | Back / close popup                      |
+| `/`       | Show keybindings                        |
+| `q`       | Quit                                    |
+
+### Download popup
+
+Pressing `d` on any video opens a popup:
+
+- `1` or `v` → download as **video** (mp4)
+- `2` or `a` → download as **audio** (mp3)
+- `Esc` → cancel
+
+Files are saved to your configured download folder (defaults to `~/Videos`).
+Open the **Downloads** page from the sidebar and press `Enter` to play a saved
+file.
 
 ## Configuration
 
-Configuration is stored at `~/.config/youtui-rs/config.json`
+Settings live at `~/.config/youtui-rs/config.json` and can be edited in-app from
+the **Settings** screen (press `Enter` on a row to change it):
+
+- **Player** — cycle mpv / vlc / mplayer / ffplay
+- **Download Path** — opens the Yazi folder picker
+- **Quality**, **Format**, **Log Level** — cycle through options
+- **Auto-play**, **Loop** — toggle
+
+Other state:
+
+- Download history: `~/.config/youtui-rs/downloads.json`
+- Database (history, saved, playlists): `~/.local/share/youtui-rs/youtui.db`
 
 ## License
 

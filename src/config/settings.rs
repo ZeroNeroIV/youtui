@@ -74,7 +74,7 @@ impl Default for Settings {
             default_format: "mp4".to_string(),
             download_path: dirs::video_dir().unwrap_or_else(|| PathBuf::from(".")),
             player: "mpv".to_string(),
-            api_instance_invidious: "https://invidious.snopyta.org".to_string(),
+            api_instance_invidious: "https://invidious.flokinet.to".to_string(),
             api_instance_piped: "https://pipedapi.kavin.rocks".to_string(),
             theme: "dark".to_string(),
             log_level: "info".to_string(),
