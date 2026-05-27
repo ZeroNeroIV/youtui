@@ -129,6 +129,7 @@ pub struct App {
     pub current_suggestion: Option<String>,
     pub is_loading: bool,
     pub is_playing: bool,
+    pub is_paused: bool,
     pub loading_message: String,
     pub startup_warnings: Vec<String>,
     pub search_query: String,
@@ -275,6 +276,7 @@ impl App {
             current_suggestion: None,
             is_loading: false,
         is_playing: false,
+            is_paused: false,
             loading_message: String::new(),
             startup_warnings,
             search_query: String::new(),
@@ -376,6 +378,7 @@ impl App {
         self.anim_tick = self.anim_tick.wrapping_add(1);
         if self.playback_ended_rx.try_recv().is_ok() {
             self.is_playing = false;
+            self.is_paused = false;
             self.playback_state = PlaybackState::Idle;
             self.playback_started = None;
         }
@@ -653,6 +656,76 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Manually skip to the next/previous item in the last-played list
+    /// (delta = +1 next, -1 previous). Unlike play_next_video this ignores the
+    /// is_playing guard so it works while something is already playing.
+    fn skip_relative(&mut self, delta: i64) {
+        let Some(category) = self.last_played_category.clone() else { return };
+        let Some(idx) = self.last_played_index else { return };
+        let target = idx as i64 + delta;
+        if target < 0 { return; }
+        let t = target as usize;
+        match category.as_str() {
+            "history" => {
+                if t < self.history_results.len() {
+                    self.history_state.select(Some(t));
+                    self.last_played_index = Some(t);
+                    if let Some(e) = self.history_results.get(t).cloned() { self.play_history_video(&e); }
+                }
+            }
+            "saved" => {
+                if t < self.saved_results.len() {
+                    self.saved_state.select(Some(t));
+                    self.last_played_index = Some(t);
+                    if let Some(v) = self.saved_results.get(t).cloned() { self.play_saved_video(&v); }
+                }
+            }
+            "search" => {
+                if t < self.search_results.len() {
+                    self.list_state.select(Some(t));
+                    self.last_played_index = Some(t);
+                    if let Some(v) = self.search_results.get(t).cloned() { self.play_search_video(&v); }
+                }
+            }
+            "main" => {
+                if t < self.items.len() {
+                    self.list_state.select(Some(t));
+                    self.last_played_index = Some(t);
+                    if let Some(title) = self.items.get(t).cloned() { self.play_main_video(&title); }
+                }
+            }
+            "playlist" => {
+                if t < self.playlist_videos.len() {
+                    self.playlist_videos_state.select(Some(t));
+                    self.last_played_index = Some(t);
+                    if let Some(v) = self.playlist_videos.get(t).cloned() { self.play_playlist_video(&v); }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn is_typing_context(&self) -> bool {
+        match self.mode {
+            AppMode::Search => self.search_focus == SearchFocus::Input,
+            AppMode::Playlist => self.playlist_prompt_mode.is_some() || self.playlist_focus == ListFocus::Input,
+            AppMode::History => self.history_focus == ListFocus::Input,
+            AppMode::Saved => self.saved_focus == ListFocus::Input,
+            _ => false,
+        }
+    }
+
+    fn media_toggle_pause(&mut self) {
+        self.is_paused = !self.is_paused;
+        let player = self.player.clone();
+        tokio::spawn(async move { player.toggle_pause().await; });
+    }
+
+    fn media_seek(&mut self, secs: i64) {
+        let player = self.player.clone();
+        tokio::spawn(async move { player.seek(secs).await; });
     }
 
     fn render(&mut self, f: &mut ratatui::Frame) {
@@ -1410,6 +1483,27 @@ impl App {
                             self.pending_download_id = None;
                             self.pending_download_title = None;
                         }
+                        _ => {}
+                    }
+                }
+                Event::Key(key)
+                    if self.is_playing
+                        && !self.is_typing_context()
+                        && matches!(
+                            key.code,
+                            KeyCode::Char(' ')
+                                | KeyCode::Left
+                                | KeyCode::Right
+                                | KeyCode::Char('>')
+                                | KeyCode::Char('<')
+                        ) =>
+                {
+                    match key.code {
+                        KeyCode::Char(' ') => self.media_toggle_pause(),
+                        KeyCode::Left => self.media_seek(-10),
+                        KeyCode::Right => self.media_seek(10),
+                        KeyCode::Char('>') => self.skip_relative(1),
+                        KeyCode::Char('<') => self.skip_relative(-1),
                         _ => {}
                     }
                 }
@@ -2932,6 +3026,7 @@ KeyCode::Enter => {
 
     fn begin_playback(&mut self, title: &str) {
         self.is_playing = true;
+        self.is_paused = false;
         self.loading_message = format!("Playing: {}...", title);
         self.playback_title = title.to_string();
         self.playback_state = PlaybackState::Loading;
@@ -2950,8 +3045,13 @@ KeyCode::Enter => {
         let text = match self.playback_state {
             PlaybackState::Loading => format!(" {} Loading {} {}…", spin, media, title),
             PlaybackState::Playing => {
-                let secs = self.playback_started.map(|s| s.elapsed().as_secs()).unwrap_or(0);
-                format!(" {} {} {}  ·  {:02}:{:02}", media, title, "playing", secs / 60, secs % 60)
+                if self.is_paused {
+                    format!(" ⏸ {} paused  ·  Space resume · ←/→ seek · </> prev/next", title)
+                } else {
+                    let secs = self.playback_started.map(|s| s.elapsed().as_secs()).unwrap_or(0);
+                    format!(" {} {}  ·  {:02}:{:02}  ·  Space pause · ←/→ seek · </> prev/next",
+                        media, title, secs / 60, secs % 60)
+                }
             }
             PlaybackState::Error => {
                 let e = self.playback_error.as_deref().unwrap_or("playback failed");

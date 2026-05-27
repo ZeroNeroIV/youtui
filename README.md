@@ -114,6 +114,38 @@ youtui --debug    # launch with debug logging to the terminal
 | `/`       | Show keybindings                        |
 | `q`       | Quit                                    |
 
+### Playback controls
+
+While something is playing, these work from anywhere in the app (except while
+typing in a search box):
+
+| Key       | Action                          |
+|-----------|---------------------------------|
+| `Space`   | Pause / resume                  |
+| `←` / `→` | Seek backward / forward 10s     |
+| `<` / `>` | Previous / next in the list     |
+
+**Hardware media keys (headset / keyboard play-pause-next):** these are routed
+on Linux through MPRIS. Install [`mpv-mpris`](https://github.com/hoyon/mpv-mpris)
+and youtui will load it automatically, so your headset's play/pause and
+next/previous buttons control playback:
+
+```bash
+# Arch
+sudo pacman -S mpv-mpris
+# Fedora
+sudo dnf install mpv-mpris
+# Debian/Ubuntu
+sudo apt install mpv-mpris
+```
+
+You can also control playback from any MPRIS client, e.g.:
+
+```bash
+playerctl play-pause
+playerctl next
+```
+
 ### Download popup
 
 Pressing `d` on any video opens a popup:

@@ -28,6 +28,10 @@ pub trait Player: Send + Sync {
     async fn is_playing(&self) -> bool;
 
     async fn queue_video(&self, url: &str) -> Result<(), String>;
+
+    async fn toggle_pause(&self) {}
+
+    async fn seek(&self, _secs: i64) {}
 }
 
 pub fn create_player(
