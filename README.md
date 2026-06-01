@@ -12,6 +12,8 @@ Search, play, and download videos or audio without ever opening a browser.
      ╚═╝    ╚═════╝  ╚═════╝    ╚═╝    ╚═════╝ ╚═╝
 ```
 
+[![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2FZeroNeroIV%2Fyoutui.git&count_bg=%2379C83D&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false)](https://hits.seeyoufarm.com)
+
 ## Features
 
 - **Search** YouTube via Invidious, with automatic fallback across multiple
@@ -53,7 +55,14 @@ sudo apt install mpv
 
 ## Installation
 
-### Option A — build and symlink (recommended)
+### Option A — cargo install (recommended)
+
+```bash
+cargo install --path .
+# installs the `youtui-rs` binary into ~/.cargo/bin
+```
+
+### Option B — build and symlink
 
 Build the optimized release binary, then create a symlink named `youtui` on
 your `PATH` so you can launch it from anywhere:
@@ -68,33 +77,19 @@ cargo build --release
 
 # 3. Symlink it as `youtui` into a directory on your PATH
 mkdir -p ~/.local/bin
-ln -sf "$(pwd)/target/release/youtui-rs" ~/.local/bin/youtui
+ln -sf "$(pwd)/target/release/youtui-rs" ~/.local/bin/youtui-rs
 
 # 4. Make sure ~/.local/bin is on your PATH (add to ~/.bashrc or ~/.zshrc if not)
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Now run it from anywhere:
-
-```bash
-youtui
-```
-
 The symlink points at the build output, so future `cargo build --release` runs
-update the `youtui` command automatically — no need to re-link.
-
-### Option B — cargo install
-
-```bash
-cargo install --path .
-# installs the `youtui-rs` binary into ~/.cargo/bin
-```
+update the `youtui-rs` command automatically — no need to re-link.
 
 ## Usage
 
 ```bash
-youtui            # launch the app
-youtui --debug    # launch with debug logging to the terminal
+youtui-rs            # launch the app
 ```
 
 ### Keybindings
