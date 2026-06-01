@@ -269,6 +269,7 @@ impl MpvPlayer {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_mpv_internal(
         inner: &std::sync::Arc<MpvPlayerInner>,
         url: &str,
@@ -276,8 +277,8 @@ impl MpvPlayer {
         format: &str,
         loop_playback: bool,
         extra_args: &[&str],
-        playback_ended_tx: tokio::sync::mpsc::Sender<()>,
-        notification_tx: broadcast::Sender<PlaybackNotification>,
+        _playback_ended_tx: tokio::sync::mpsc::Sender<()>,
+        _notification_tx: broadcast::Sender<PlaybackNotification>,
     ) -> Result<(), String> {
         let path = path::get_player_path("mpv")
             .ok_or_else(|| "mpv binary not found. Run with --detect-players to see available players.".to_string())?;

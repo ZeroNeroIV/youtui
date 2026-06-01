@@ -12,8 +12,8 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Margin, Rect},
-    style::{Color, Style, Stylize},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, ListState, Padding, Paragraph, Wrap},
     Terminal,
@@ -587,16 +587,14 @@ impl App {
         }
     }
 
-    fn filter_by_query<T: Filterable>(&self, items: &[T]) -> Vec<T>
-    where
-        T: Clone,
-    {
+    fn filter_by_query<T: Filterable + Clone>(&self, items: &[T]) -> Vec<T> {
         if self.search_query.is_empty() {
             return items.to_vec();
         }
         items.iter().filter(|i| i.matches_query(&self.search_query)).cloned().collect()
     }
 
+    #[allow(dead_code)]
     fn play_next_video(&mut self) {
         if self.is_playing {
             return;
@@ -646,16 +644,16 @@ impl App {
                     }
                 }
             }
-            "playlist" => {
-                if self.mode == AppMode::Playlist && !self.playlist_videos.is_empty() {
-                    if idx + 1 < self.playlist_videos.len() {
-                        let next_idx = idx + 1;
-                        self.playlist_videos_state.select(Some(next_idx));
-                        self.last_played_index = Some(next_idx);
-                        if let Some(video) = self.playlist_videos.get(next_idx).cloned() {
-                            self.play_playlist_video(&video);
-                        }
-                    }
+            "playlist"
+                if self.mode == AppMode::Playlist
+                    && !self.playlist_videos.is_empty()
+                    && idx + 1 < self.playlist_videos.len() =>
+            {
+                let next_idx = idx + 1;
+                self.playlist_videos_state.select(Some(next_idx));
+                self.last_played_index = Some(next_idx);
+                if let Some(video) = self.playlist_videos.get(next_idx).cloned() {
+                    self.play_playlist_video(&video);
                 }
             }
             _ => {}
@@ -700,12 +698,10 @@ impl App {
                     if let Some(title) = self.items.get(t).cloned() { self.play_main_video(&title); }
                 }
             }
-            "playlist" => {
-                if t < self.playlist_videos.len() {
-                    self.playlist_videos_state.select(Some(t));
-                    self.last_played_index = Some(t);
-                    if let Some(v) = self.playlist_videos.get(t).cloned() { self.play_playlist_video(&v); }
-                }
+            "playlist" if t < self.playlist_videos.len() => {
+                self.playlist_videos_state.select(Some(t));
+                self.last_played_index = Some(t);
+                if let Some(v) = self.playlist_videos.get(t).cloned() { self.play_playlist_video(&v); }
             }
             _ => {}
         }
@@ -1372,7 +1368,7 @@ impl App {
         if self.is_searching {
             components::render_loading(f, chunks[2], "Querying Invidious…");
         } else if let Some(ref error) = self.search_error.clone() {
-            components::render_error(f, chunks[2], &error, Some("Try a different Invidious instance in Settings"));
+            components::render_error(f, chunks[2], error, Some("Try a different Invidious instance in Settings"));
         } else if self.search_results.is_empty() {
             components::render_empty_state(
                 f, chunks[2], &self.theme,
@@ -1806,6 +1802,8 @@ KeyCode::Enter => {
                         KeyCode::Char(c) => {
                             if self.history_focus == ListFocus::Input {
                                 self.search_query.push(c);
+                            } else if c == 'd' {
+                                self.handle_download_shortcut();
                             }
                         }
                         KeyCode::Backspace => {
@@ -1827,22 +1825,6 @@ KeyCode::Enter => {
                             self.mode = AppMode::Main;
                             self.search_query.clear();
                         }
-                        KeyCode::Char('d') => self.handle_download_shortcut(),
-                        KeyCode::Up => self.scroll_history_up(),
-                        KeyCode::Down => self.scroll_history_down(),
-                        KeyCode::Enter => {
-                            if let Some(idx) = self.history_state.selected() {
-                                let entry = self.history_results.get(idx).cloned();
-                                if let Some(e) = entry {
-                                    self.play_history_video(&e);
-                                }
-                            }
-                        }
-                        KeyCode::Esc => {
-                            self.mode = AppMode::Main;
-                            self.search_query.clear();
-                        }
-                        KeyCode::Char('d') => self.handle_download_shortcut(),
                         _ => {}
                     },
                     AppMode::Saved => match key.code {
@@ -1869,6 +1851,8 @@ KeyCode::Enter => {
                         KeyCode::Char(c) => {
                             if self.saved_focus == ListFocus::Input {
                                 self.search_query.push(c);
+                            } else if c == 'd' {
+                                self.handle_download_shortcut();
                             }
                         }
                         KeyCode::Backspace => {
@@ -1908,7 +1892,6 @@ KeyCode::Enter => {
                             self.mode = AppMode::Main;
                             self.search_query.clear();
                         }
-                        KeyCode::Char('d') => self.handle_download_shortcut(),
                         _ => {}
                     },
                     AppMode::Playlist => {
@@ -2089,10 +2072,8 @@ KeyCode::Enter => {
                         }
                     }
                 },
-                Event::Mouse(mouse) => {
-                    if self.mode == AppMode::Main {
-                        self.handle_mouse_event(mouse);
-                    }
+                Event::Mouse(mouse) if self.mode == AppMode::Main => {
+                    self.handle_mouse_event(mouse);
                 }
                 _ => {}
             }
@@ -2594,6 +2575,7 @@ KeyCode::Enter => {
         });
     }
 
+    #[allow(dead_code)]
     fn get_selected_video_id(&self) -> Option<String> {
         match self.mode {
             AppMode::Main => None,
@@ -2973,6 +2955,7 @@ KeyCode::Enter => {
         }
     }
 
+    #[allow(dead_code)]
     fn render_empty_state(&mut self, f: &mut ratatui::Frame) {
         if self.items.is_empty() && !self.is_loading && self.current_error.is_none() {
             let view = self.current_view();
@@ -3162,7 +3145,7 @@ KeyCode::Enter => {
         use ratatui::widgets::Gauge;
 
         const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        let spin = SPINNER[(self.anim_tick / 1) as usize % SPINNER.len()];
+        let spin = SPINNER[self.anim_tick as usize % SPINNER.len()];
 
         let (label, pct) = match &self.download_bar_state {
             DownloadBarState::Active => {

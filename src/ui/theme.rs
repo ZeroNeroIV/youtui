@@ -24,9 +24,7 @@ impl Theme {
         }
     }
 
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name.to_lowercase().as_str() {
-            _ => Some(Self::default_theme()),
-        }
+    pub fn from_name(_name: &str) -> Option<Self> {
+        Some(Self::default_theme())
     }
 }
