@@ -32,6 +32,8 @@ pub trait Player: Send + Sync {
     async fn toggle_pause(&self) {}
 
     async fn seek(&self, _secs: i64) {}
+
+    async fn set_volume(&self, _delta: i64) {}
 }
 
 pub fn create_player(

@@ -121,6 +121,8 @@ pub struct App {
     pub pending_download_title: Option<String>,
     pub anim_tick: u64,
     pub download_is_audio: bool,
+    pub show_delete_confirm: bool,
+    pub pending_delete_index: Option<usize>,
     pub downloads: Vec<DownloadRecord>,
     pub downloads_state: ListState,
     pub sidebar_area: Rect,
@@ -268,6 +270,8 @@ impl App {
             pending_download_title: None,
             anim_tick: 0,
             download_is_audio: false,
+            show_delete_confirm: false,
+            pending_delete_index: None,
             downloads: load_downloads(),
             downloads_state: ListState::default(),
             sidebar_area: Rect::default(),
@@ -728,6 +732,11 @@ impl App {
         tokio::spawn(async move { player.seek(secs).await; });
     }
 
+    fn media_volume_delta(&mut self, delta: i64) {
+        let player = self.player.clone();
+        tokio::spawn(async move { player.set_volume(delta).await; });
+    }
+
     fn render(&mut self, f: &mut ratatui::Frame) {
         let dl_active = self.download_bar_state == DownloadBarState::Active;
         let dl_lingering = matches!(self.download_bar_state, DownloadBarState::Done | DownloadBarState::Failed);
@@ -788,6 +797,10 @@ impl App {
 
         if self.show_download_menu {
             self.render_download_menu(f);
+        }
+
+        if self.show_delete_confirm {
+            self.render_delete_confirm(f);
         }
 
         if show_bottom_bar {
@@ -857,7 +870,7 @@ impl App {
             }
         }
 
-        let foot = Paragraph::new("  ↑/↓ navigate  ·  Enter play  ·  Esc back")
+        let foot = Paragraph::new("  ↑/↓ navigate  ·  Enter play  ·  d delete  ·  Esc back")
             .style(Style::default().add_modifier(Modifier::DIM));
         f.render_widget(foot, chunks[2]);
     }
@@ -885,7 +898,9 @@ impl App {
             ("h", "History"),
             ("v", "Saved videos"),
             ("p", "Playlists"),
-            ("d", "Download video"),
+            ("d", "Download video (in search/history/saved)"),
+            ("d", "Delete download (in downloads list)"),
+            ("9/0", "Volume down/up (during playback)"),
             ("q", "Quit"),
         ];
         
@@ -1496,6 +1511,8 @@ impl App {
                                 | KeyCode::Right
                                 | KeyCode::Char('>')
                                 | KeyCode::Char('<')
+                                | KeyCode::Char('9')
+                                | KeyCode::Char('0')
                         ) =>
                 {
                     match key.code {
@@ -1504,6 +1521,8 @@ impl App {
                         KeyCode::Right => self.media_seek(10),
                         KeyCode::Char('>') => self.skip_relative(1),
                         KeyCode::Char('<') => self.skip_relative(-1),
+                        KeyCode::Char('9') => self.media_volume_delta(-10),
+                        KeyCode::Char('0') => self.media_volume_delta(10),
                         _ => {}
                     }
                 }
@@ -1633,11 +1652,43 @@ impl App {
                         crate::ui::settings::handle_events(self, key.code);
                     }
                     AppMode::Downloads => {
-                        if key.code == KeyCode::Esc {
+                        if self.show_delete_confirm {
+                            match key.code {
+                                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                    if let Some(idx) = self.pending_delete_index {
+                                        if let Some(rec) = self.downloads.get(idx) {
+                                            let _ = std::fs::remove_file(&rec.path);
+                                        }
+                                        self.downloads.remove(idx);
+                                        let _ = save_downloads(&self.downloads);
+                                        if self.downloads.is_empty() {
+                                            self.downloads_state.select(None);
+                                        } else {
+                                            let new_idx = idx.min(self.downloads.len() - 1);
+                                            self.downloads_state.select(Some(new_idx));
+                                        }
+                                    }
+                                    self.show_delete_confirm = false;
+                                    self.pending_delete_index = None;
+                                }
+                                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                    self.show_delete_confirm = false;
+                                    self.pending_delete_index = None;
+                                }
+                                _ => {}
+                            }
+                        } else if key.code == KeyCode::Esc {
                             self.show_keybinds_popup = false;
                             self.mode = AppMode::Main;
                         } else if key.code == KeyCode::Char('/') {
                             self.show_keybinds_popup = !self.show_keybinds_popup;
+                        } else if key.code == KeyCode::Char('d') {
+                            if let Some(idx) = self.downloads_state.selected() {
+                                if self.downloads.get(idx).is_some() {
+                                    self.pending_delete_index = Some(idx);
+                                    self.show_delete_confirm = true;
+                                }
+                            }
                         } else if key.code == KeyCode::Up {
                             if !self.downloads.is_empty() {
                                 let i = match self.downloads_state.selected() {
@@ -2963,6 +3014,46 @@ KeyCode::Enter => {
         }
     }
 
+    fn render_delete_confirm(&self, f: &mut ratatui::Frame) {
+        use ratatui::style::Modifier;
+        let area = self.content_area;
+        let w = 48u16.min(area.width.saturating_sub(4));
+        let h = 7u16;
+        let popup = Rect {
+            x: area.x + (area.width.saturating_sub(w)) / 2,
+            y: area.y + (area.height.saturating_sub(h)) / 2,
+            width: w,
+            height: h,
+        };
+
+        let title = self
+            .pending_delete_index
+            .and_then(|i| self.downloads.get(i))
+            .map(|r| r.title.as_str())
+            .unwrap_or("file");
+
+        let lines = vec![
+            Line::from(Span::raw("")),
+            Line::from(vec![
+                Span::styled("  Delete \"", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(marquee(title, 30, 0)),
+                Span::styled("\"?", Style::default().add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(Span::raw("")),
+            Line::from(Span::styled("  This cannot be undone.", Style::default().add_modifier(Modifier::DIM))),
+            Line::from(Span::raw("")),
+            Line::from(Span::styled("  y/Y confirm  ·  n/N or Esc cancel", Style::default().add_modifier(Modifier::DIM))),
+        ];
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().add_modifier(Modifier::BOLD))
+            .title(" Delete file ");
+        let para = Paragraph::new(lines).block(block);
+        f.render_widget(Clear, popup);
+        f.render_widget(para, popup);
+    }
+
     fn render_download_menu(&self, f: &mut ratatui::Frame) {
         use ratatui::style::Modifier;
         let area = self.content_area;
@@ -3046,10 +3137,10 @@ KeyCode::Enter => {
             PlaybackState::Loading => format!(" {} Loading {} {}…", spin, media, title),
             PlaybackState::Playing => {
                 if self.is_paused {
-                    format!(" ⏸ {} paused  ·  Space resume · ←/→ seek · </> prev/next", title)
+                    format!(" ⏸ {} paused  ·  Space resume · ←/→ seek · </> prev/next · 9/0 vol", title)
                 } else {
                     let secs = self.playback_started.map(|s| s.elapsed().as_secs()).unwrap_or(0);
-                    format!(" {} {}  ·  {:02}:{:02}  ·  Space pause · ←/→ seek · </> prev/next",
+                    format!(" {} {}  ·  {:02}:{:02}  ·  Space pause · ←/→ seek · </> prev/next · 9/0 vol",
                         media, title, secs / 60, secs % 60)
                 }
             }
